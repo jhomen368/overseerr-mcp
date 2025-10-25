@@ -1,0 +1,48 @@
+{
+  "name": "overseerr-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Overseerr - enables AI assistants to search, request, and manage media through your Overseerr instance",
+  "type": "module",
+  "author": "jhomen368",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jhomen368/overseerr-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "overseerr",
+    "plex",
+    "media",
+    "automation",
+    "ai",
+    "assistant"
+  ],
+  "bin": {
+    "overseerr-mcp": "./build/index.js"
+  },
+  "files": [
+    "build/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "axios": "^1.7.9",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/express": "^4.17.21",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
