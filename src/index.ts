@@ -385,11 +385,22 @@ class OverseerrServer {
       throw new McpError(ErrorCode.InvalidParams, 'Invalid search arguments');
     }
 
-    const response = await this.axiosInstance.get<SearchResult>('/search', {
-      params: {
-        query: args.query,
-        page: args.page || 1,
-        language: args.language || 'en',
+    // Encode query and manually replace characters that encodeURIComponent doesn't encode
+    // but Overseerr requires to be encoded (like !)
+    const encodedQuery = encodeURIComponent(args.query)
+      .replace(/!/g, '%21')
+      .replace(/'/g, '%27')
+      .replace(/\(/g, '%28')
+      .replace(/\)/g, '%29')
+      .replace(/\*/g, '%2A');
+    
+    const queryString = `query=${encodedQuery}&page=${args.page || 1}&language=${args.language || 'en'}`;
+    const fullUrl = `${OVERSEERR_URL}/api/v1/search?${queryString}`;
+
+    const response = await axios.get<SearchResult>(fullUrl, {
+      headers: {
+        'X-Api-Key': OVERSEERR_API_KEY as string,
+        'Content-Type': 'application/json',
       },
     });
 
