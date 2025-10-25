@@ -387,7 +387,7 @@ class OverseerrServer {
 
     const response = await this.axiosInstance.get<SearchResult>('/search', {
       params: {
-        query: encodeURIComponent(args.query),
+        query: args.query,
         page: args.page || 1,
         language: args.language || 'en',
       },
