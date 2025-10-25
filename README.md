@@ -71,7 +71,7 @@ The Docker image has these defaults (no need to override unless you want to chan
 ### NPM Installation
 
 ```bash
-npm install -g overseerr-mcp
+npm install -g @jhomen368/overseerr-mcp
 ```
 
 ### From Source
@@ -223,7 +223,7 @@ Add to your Claude Desktop configuration file:
   "mcpServers": {
     "overseerr": {
       "command": "npx",
-      "args": ["-y", "overseerr-mcp"],
+      "args": ["-y", "@jhomen368/overseerr-mcp"],
       "env": {
         "OVERSEERR_URL": "https://overseerr.example.com",
         "OVERSEERR_API_KEY": "your-api-key-here"
