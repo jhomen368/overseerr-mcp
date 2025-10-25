@@ -28,7 +28,29 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Check if version exists on npm
+        id: check_version
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          echo "Package: ${PACKAGE_NAME}@${PACKAGE_VERSION}"
+          
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version 2>/dev/null; then
+            echo "Version ${PACKAGE_VERSION} already exists on npm"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version ${PACKAGE_VERSION} does not exist, will publish"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish to npm
+        if: steps.check_version.outputs.exists == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip publishing (version exists)
+        if: steps.check_version.outputs.exists == 'true'
+        run: |
+          echo "⚠️ Version already published to npm, skipping publish"
+          echo "This usually means the tag was pushed multiple times or package.json version wasn't updated before creating the release tag"
