@@ -1,6 +1,6 @@
 {
   "name": "@jhomen368/overseerr-mcp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Model Context Protocol (MCP) server for Overseerr - enables AI assistants to search, request, and manage media through your Overseerr instance",
   "type": "module",
   "author": "jhomen368",

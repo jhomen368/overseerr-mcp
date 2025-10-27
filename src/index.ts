@@ -105,6 +105,13 @@ const isValidMediaDetailsArgs = (
   (args.mediaType === 'movie' || args.mediaType === 'tv') &&
   typeof args.mediaId === 'number';
 
+const isValidCheckRequestStatusArgs = (
+  args: any
+): args is { title: string; language?: string } =>
+  typeof args === 'object' &&
+  args !== null &&
+  typeof args.title === 'string';
+
 class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
@@ -333,6 +340,26 @@ class OverseerrServer {
             required: ['requestId'],
           },
         },
+        {
+          name: 'check_request_status_by_title',
+          description:
+            'Search for media by title and check if it has been requested and its current status. Returns all matching titles with their request information including request status (pending, approved, declined) and media availability status (pending, processing, available, etc.). Perfect for checking if a title has already been requested before making a new request.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              title: {
+                type: 'string',
+                description: 'Title to search for (movie or TV show name)',
+              },
+              language: {
+                type: 'string',
+                description: 'Language code (e.g., "en", default: "en")',
+                default: 'en',
+              },
+            },
+            required: ['title'],
+          },
+        },
       ],
     }));
 
@@ -355,6 +382,8 @@ class OverseerrServer {
             return await this.handleGetMediaDetails(request.params.arguments);
           case 'delete_request':
             return await this.handleDeleteRequest(request.params.arguments);
+          case 'check_request_status_by_title':
+            return await this.handleCheckRequestStatusByTitle(request.params.arguments);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -646,6 +675,110 @@ class OverseerrServer {
               success: true,
               message: 'Request deleted successfully',
               requestId: args.requestId,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+
+  private async handleCheckRequestStatusByTitle(args: any) {
+    if (!isValidCheckRequestStatusArgs(args)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'Invalid check request status arguments'
+      );
+    }
+
+    // Step 1: Search for media by title
+    const encodedQuery = encodeURIComponent(args.title)
+      .replace(/!/g, '%21')
+      .replace(/'/g, '%27')
+      .replace(/\(/g, '%28')
+      .replace(/\)/g, '%29')
+      .replace(/\*/g, '%2A');
+    
+    const queryString = `query=${encodedQuery}&page=1&language=${args.language || 'en'}`;
+    const fullUrl = `${OVERSEERR_URL}/api/v1/search?${queryString}`;
+
+    const searchResponse = await axios.get<SearchResult>(fullUrl, {
+      headers: {
+        'X-Api-Key': OVERSEERR_API_KEY as string,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    // Step 2: For each result, get media details which includes request info
+    const results = await Promise.all(
+      searchResponse.data.results
+        .filter((item) => item.mediaType === 'movie' || item.mediaType === 'tv')
+        .slice(0, 10) // Limit to first 10 results to avoid too many API calls
+        .map(async (item) => {
+          try {
+            const endpoint = item.mediaType === 'movie' ? 'movie' : 'tv';
+            const mediaResponse = await this.axiosInstance.get(
+              `/${endpoint}/${item.id}`,
+              {
+                params: {
+                  language: args.language || 'en',
+                },
+              }
+            );
+
+            const mediaInfo = mediaResponse.data.mediaInfo || null;
+            const requests = mediaInfo?.requests || [];
+
+            return {
+              tmdbId: item.id,
+              mediaType: item.mediaType,
+              title: item.title || item.name || 'Unknown',
+              releaseDate: item.releaseDate || item.firstAirDate || 'Unknown',
+              overview: item.overview || 'No overview available',
+              hasBeenRequested: requests.length > 0,
+              requestCount: requests.length,
+              requests: requests.map((req: any) => ({
+                requestId: req.id,
+                requestStatus: this.getStatusString(req.status),
+                requestedBy: req.requestedBy?.email || 'Unknown',
+                createdAt: req.createdAt,
+                updatedAt: req.updatedAt,
+              })),
+              mediaAvailabilityStatus: mediaInfo
+                ? this.getMediaStatusString(mediaInfo.status)
+                : 'NOT_IN_SYSTEM',
+            };
+          } catch (error) {
+            // If media details fail, still return basic info
+            return {
+              tmdbId: item.id,
+              mediaType: item.mediaType,
+              title: item.title || item.name || 'Unknown',
+              releaseDate: item.releaseDate || item.firstAirDate || 'Unknown',
+              overview: item.overview || 'No overview available',
+              hasBeenRequested: false,
+              requestCount: 0,
+              requests: [],
+              mediaAvailabilityStatus: 'ERROR_FETCHING_DETAILS',
+              error: axios.isAxiosError(error)
+                ? error.message
+                : 'Unknown error',
+            };
+          }
+        })
+    );
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              searchQuery: args.title,
+              totalResults: searchResponse.data.totalResults,
+              resultsReturned: results.length,
+              results,
             },
             null,
             2
