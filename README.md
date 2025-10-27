@@ -40,6 +40,12 @@ This server provides the following tools for interacting with your Overseerr ins
 7. **delete_request** - Delete a media request
    - Users can delete their own pending requests
 
+8. **check_request_status_by_title** - Search for media by title and check request status
+   - Returns all matching titles with request information
+   - Shows request status (pending, approved, declined)
+   - Displays media availability (pending, processing, available, etc.)
+   - Perfect for checking if a title has already been requested before making a new request
+
 ## Prerequisites
 
 - Node.js 18.0 or higher
@@ -248,11 +254,15 @@ Then start the server in HTTP mode using Docker (see Docker Usage section).
 Once configured, you can ask your AI assistant to:
 
 - "Search for the movie Inception in Overseerr"
+- "Check if The Matrix has already been requested"
+- "Has anyone requested Breaking Bad yet?"
 - "Request the TV show Breaking Bad, all seasons"
 - "List all pending media requests"
+- "Show me all available media in the library"
 - "Get details for request ID 123"
 - "Approve request ID 45"
 - "Show me information about the movie with TMDB ID 550"
+- "What's the status of my request for Dune?"
 
 ## API Reference
 
