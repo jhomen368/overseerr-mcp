@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-11-15
+
+### Fixed
+- **Bug #20**: Season 0 (specials) automatically requested with `seasons: "all"`
+  - `seasons: "all"` now explicitly excludes season 0 (specials) for TV shows
+  - Expansion logic filters seasons using `s.seasonNumber > 0` condition
+  - Applies to both `request_media` tool and auto-request workflow in dedupe mode
+  - Fixed in handleSingleRequest method (src/index.ts line ~1458)
+  - Fixed in handleDedupeMode auto-request logic (src/index.ts line ~1342)
+  - To request specials, users must explicitly include 0 in array: `seasons: [0, 1, 2]`
+
+### Changed
+- Updated tool descriptions to clarify season 0 exclusion behavior
+  - `request_media` description now states: "seasons:'all' excludes season 0 (specials); use explicit array like [0,1,2] to include specials"
+  - `search_media` requestOptions.seasons description updated with same clarification
+  - Parameter descriptions in inputSchema updated for both single and batch modes
+
 ## [1.2.1] - 2025-11-15
 
 ### Fixed
