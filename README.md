@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/overseerr-mcp/pkgs/container/overseerr-mcp)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that provides AI assistants with direct integration to [Overseerr](https://overseerr.dev/), enabling automated media discovery, requests, and management for your Plex ecosystem.
 
