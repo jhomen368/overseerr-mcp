@@ -1,11 +1,11 @@
 # Comprehensive Test Plan: Media Management Workflow
 
-**Version**: 1.2.0  
+**Version**: 1.2.1  
 **Scope**: Complete workflow covering **anime (priority)**, TV shows, movies, mixed batches, deduplication, availability checking, and request management  
 **Objective**: Exhaustive edge case testing across all media types to identify bugs and ensure reliability  
-**Test Count**: 76+ scenarios across 12 categories
+**Test Count**: 82+ scenarios across 13 categories
 
-**⚠️ MANDATORY EXECUTION**: ALL 12 categories MUST be run in every test execution. No categories may be skipped.
+**⚠️ MANDATORY EXECUTION**: ALL 13 categories MUST be run in every test execution. No categories may be skipped.
 
 ---
 
@@ -776,6 +776,130 @@ Create or ensure the following exist:
 
 ---
 
+### Category 13: Bug #19 - TV Seasons Parameter Validation (6 tests)
+
+**Bug Context (v1.2.1)**:
+- **Issue**: TV show requests without seasons parameter causing HTTP 500 errors
+- **Root Cause**: Overseerr API error: "Cannot read properties of undefined (reading 'filter')"
+- **Fix**: Added validation to require seasons parameter for all TV show requests
+- **Location**: [`src/index.ts`](src/index.ts:1444-1449) (handleSingleRequest validation)
+- **Impact**: Prevents API errors, provides clear user feedback
+
+#### Test 13.1: TV Show Without Seasons Parameter - Direct Request
+**Input**:
+```json
+{
+  "mediaType": "tv",
+  "mediaId": 82856,
+  "dryRun": true
+}
+```
+**Expected**:
+- Request REJECTED with error
+- Error message: "seasons parameter is required for TV show requests"
+- Suggests valid formats: `seasons: [1,2,3]` or `seasons: "all"`
+- No HTTP 500 error propagated to Overseerr API
+- Validation occurs immediately (no API call made)
+
+#### Test 13.2: TV Show With Seasons Array - Direct Request
+**Input**:
+```json
+{
+  "mediaType": "tv",
+  "mediaId": 82856,
+  "seasons": [1, 2],
+  "dryRun": true
+}
+```
+**Expected**:
+- Request ACCEPTED
+- Dry run preview shows: `"seasons": [1, 2]`
+- mediaType: "tv"
+- Valid request structure ready for API
+
+#### Test 13.3: TV Show With seasons="all" - Direct Request
+**Input**:
+```json
+{
+  "mediaType": "tv",
+  "mediaId": 82856,
+  "seasons": "all",
+  "dryRun": true
+}
+```
+**Expected**:
+- Request ACCEPTED
+- Dry run preview shows: `"seasons": "all"`
+- Valid for requesting all available seasons
+
+#### Test 13.4: Movie Without Seasons Parameter
+**Input**:
+```json
+{
+  "mediaType": "movie",
+  "mediaId": 438631,
+  "dryRun": true
+}
+```
+**Expected**:
+- Request ACCEPTED (movies don't require seasons)
+- No seasons field in response
+- mediaType: "movie"
+- Validation distinguishes between TV and movie
+
+#### Test 13.5: Auto-Request Workflow - Season Extraction and Default
+**Input**:
+```json
+{
+  "dedupeMode": true,
+  "autoRequest": true,
+  "titles": ["The Bear Season 1", "Breaking Bad", "Dune"],
+  "autoNormalize": true,
+  "requestOptions": {
+    "dryRun": true
+  }
+}
+```
+**Expected**:
+- TV with season in title: Extracts season number → seasons: [1]
+- TV without season: Defaults to seasons: "all"
+- Movie: No seasons parameter
+- All items queued correctly per media type
+- Auto-request workflow handles TV vs movie distinction
+
+**Edge Cases**:
+- Season extraction from "Season N", "S N", "Part N" patterns
+- Default "all" when no season specified for TV
+- requestOptions.seasons overrides default
+
+#### Test 13.6: Batch Request - Mixed Media with Missing TV Seasons
+**Input**:
+```json
+{
+  "items": [
+    { "mediaType": "movie", "mediaId": 438631 },
+    { "mediaType": "tv", "mediaId": 94997 },
+    { "mediaType": "tv", "mediaId": 82856, "seasons": [1] }
+  ],
+  "dryRun": true
+}
+```
+**Expected**:
+- Item 1 (movie): SUCCEEDS
+- Item 2 (TV without seasons): FAILS with clear error
+- Item 3 (TV with seasons): SUCCEEDS
+- Batch continues processing despite failure
+- Error array identifies which item failed
+- No cascading failures
+- Summary shows: successful: 2, failed: 1
+
+**Regression Prevention**:
+- Prevents future HTTP 500 errors from missing seasons
+- Validates at MCP layer before reaching Overseerr API
+- Clear error guidance for users/AI assistants
+
+---
+
 ## Test Execution Guidelines
 
 ### Execution Order
@@ -788,74 +912,16 @@ Create or ensure the following exist:
 7. Run Category 10 (mixed batches)
 8. Run Category 11 (media type detection)
 9. Run Category 12 (real-world scenarios)
+10. Run Category 13 (Bug #19 validation - critical regression test)
 
 ### Success Criteria
-- **100% pass rate** for Categories 1-2, 11 (critical core functionality)
+- **100% pass rate** for Categories 1-2, 11, 13 (critical core functionality + bug fixes)
 - **100% pass rate** for Category 9 (movies & TV shows)
 - **95% pass rate** for Categories 3-4, 10 (performance + mixed)
 - **90% pass rate** for Categories 5-8, 12 (workflows + real-world)
 
-### Bug Severity Classification
-
----
-
-## Test Report Template
-
-```markdown
-# Test Execution Report
-
-**Date**: YYYY-MM-DD
-**Version**: 1.2.0
-**Tester**: [Name]
-**Environment**: [Production/Staging/Test]
-
-## Summary
-- Total Tests: 76+
-- Passed: X
-- Failed: Y
-- Not Executed: Z
-- Success Rate: X%
-
-## Failed Tests
-### Test X.X: Test Name
-**Status**: FAILED
-**Expected**: [Expected behavior]
-**Actual**: [Actual behavior]
-**Severity**: [CRITICAL/HIGH/MEDIUM/LOW]
-**Recommendation**: [Fix recommendation]
-
-## Performance Metrics
-- Average dedupe time (50 titles): X seconds
-- Cache hit rate: X%
-- API calls saved: X%
-- Mixed batch processing time: X seconds
-
-## Media Type Breakdown
-- Anime titles tested: X
-- Movie titles tested: X
-- TV show titles tested: X
-- Mixed batches: X
-
-## Recommendations
-1. [Priority 1 fixes]
-2. [Priority 2 enhancements]
-3. [Documentation updates needed]
-```
-
----
-
-## Continuous Testing Strategy
-
-1. **Pre-commit**: Run Categories 1-2, 11 (fast, critical core + type detection)
-2. **Pre-release**: Run Categories 1-8 (skip large batches and real-world)
-3. **Post-release**: Run all 12 categories including stress tests
-4. **Monthly**: Run full suite with production data sample
-5. **Quarterly**: Review and update test scenarios, add new edge cases
-
----
-
-**Document Version**: 1.2.0  
-**Last Updated**: 2025-11-14  
-**Next Review**: 2026-02-14  
-**Total Test Categories**: 12 (ALL MANDATORY)  
-**Total Test Scenarios**: 76+
+**Document Version**: 1.2.1  
+**Last Updated**: 2025-11-15  
+**Next Review**: 2026-02-15  
+**Total Test Categories**: 13 (ALL MANDATORY)  
+**Total Test Scenarios**: 82+

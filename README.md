@@ -2,9 +2,41 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/overseerr-mcp/pkgs/container/overseerr-mcp)
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that provides AI assistants with direct integration to [Overseerr](https://overseerr.dev/), enabling automated media discovery, requests, and management for your Plex ecosystem.
+
+## What's New in v1.2.1 🚀
+
+### Bug Fixes
+- **TV Seasons Validation** - Fixed HTTP 500 errors when requesting TV shows without seasons parameter
+  - TV show requests now require `seasons` parameter (array or "all")
+  - Clear error messages guide proper usage
+  - Auto-request workflow defaults to 'all' seasons when not specified
+
+### From v1.1.0
+
+#### Major Performance Improvements
+- **99% fewer API calls** for batch operations (150-300 → 1)
+- **88% token reduction** with compact response formats
+- **90% faster** execution (2-3 min → 10-15 sec)
+- **4 consolidated tools** (down from 8) for clearer AI understanding
+
+#### Key Features
+- 🎯 **Batch Dedupe Mode** - Check 50-100 titles in one call (perfect for anime season workflows)
+- 🔄 **Smart Caching** - 70-85% API call reduction with configurable TTLs
+- 🛡️ **Smart Confirmation** - Episode threshold (>24 episodes) for TV shows prevents accidental bulk downloads
+- ⚡ **Built-in Retry Logic** - Exponential backoff for reliability
+- 🎨 **Compact Formats** - Token-efficient responses by default
+
+#### All Bug Fixes
+- Improved media type detection (95%+ accuracy)
+- Fixed special character handling (apostrophes, exclamation marks)
+- Fixed season 0 exclusion in availability checks
+- Fixed data consistency for NOT_FOUND results
+- Fixed invalid season number validation
+- Fixed NOT_FOUND status consistency
+- Fixed TV seasons parameter requirement
 
 ## What is MCP?
 
@@ -76,11 +108,12 @@ Request movies or TV shows with automatic validation and multi-season confirmati
 
 **Features**:
 - Single or batch requests
-- Multi-season confirmation (prevents accidental bulk downloads)
+- **TV shows require `seasons` parameter** (array of season numbers or "all")
+- Multi-season confirmation when total episodes >24
 - Pre-request validation (checks if already requested/available)
 - Dry-run mode (preview without requesting)
 
-**Example - Single Request**:
+**Example - Single Movie Request**:
 ```typescript
 request_media({
   mediaType: "movie",
@@ -88,7 +121,16 @@ request_media({
 })
 ```
 
-**Example - TV Show with Confirmation**:
+**Example - TV Show Request**:
+```typescript
+request_media({
+  mediaType: "tv",
+  mediaId: 82856,
+  seasons: [1, 2]
+})
+```
+
+**Example - Multi-Season Confirmation (>24 episodes)**:
 ```typescript
 request_media({
   mediaType: "tv",
@@ -96,15 +138,16 @@ request_media({
   seasons: "all"
 })
 
-// First returns:
+// If total episodes > 24, returns:
 {
   "requiresConfirmation": true,
   "media": {
     "title": "The Bear",
     "totalSeasons": 3,
-    "totalEpisodes": 28
+    "totalEpisodes": 28,
+    "threshold": 24
   },
-  "message": "This will request 3 seasons. Add 'confirmed: true' to proceed."
+  "message": "This will request 3 season(s) with 28 episodes. Add 'confirmed: true' to proceed."
 }
 
 // Then confirm:
@@ -407,7 +450,8 @@ Once configured, you can ask your AI assistant to:
 - "Search for the movie Inception in Overseerr"
 - "Check if The Matrix has already been requested"
 - "Has anyone requested Breaking Bad yet?"
-- "Request the TV show Breaking Bad, all seasons"
+- "Request the TV show Breaking Bad season 1"
+- "Request Breaking Bad all seasons"
 - "List all pending media requests"
 - "Show me all available media in the library"
 - "Get details for request ID 123"
