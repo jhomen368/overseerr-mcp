@@ -293,12 +293,10 @@ class OverseerrServer {
         {
           name: 'search_media',
           description:
-            'Search for movies/TV shows with optional batch dedupe mode for checking multiple titles at once. Supports single query, multiple queries, or dedupe mode for Pass 1 workflow optimization.\n\n' +
-            '**Workflow Guide**:\n' +
-            '• Pass 1 (Dedupe): Use dedupeMode=true with titles array to check availability status and get reasonCode/isActionable flags\n' +
-            '• Pass 2 (Request): Use autoRequest=true to automatically request items that passed dedupe (status=pass and isActionable=true)\n' +
-            '• Manual Mode: Review dedupe results, then use request_media for selective requesting\n\n' +
-            '**reasonCode values**: NOT_FOUND, ALREADY_AVAILABLE, ALREADY_REQUESTED, SEASON_AVAILABLE, SEASON_REQUESTED, AVAILABLE_FOR_REQUEST',
+            'Search movies/TV shows with single, batch, or dedupe modes. Dedupe mode checks availability and returns actionable status for batch processing.\n\n' +
+            'Modes: single query | multi-query batch | dedupe (availability check)\n' +
+            'Workflows: Pass 1 dedupe → Pass 2 autoRequest | manual dedupe → selective request_media\n' +
+            'Status codes: NOT_FOUND, ALREADY_AVAILABLE, ALREADY_REQUESTED, SEASON_AVAILABLE, SEASON_REQUESTED, AVAILABLE_FOR_REQUEST',
           inputSchema: {
             type: 'object',
             properties: {
@@ -411,12 +409,10 @@ class OverseerrServer {
         {
           name: 'request_media',
           description:
-            'Request media with automatic multi-season confirmation for TV shows. Supports single or batch requests with validation.\n\n' +
-            '**Workflow Guide**:\n' +
-            '• Use after Pass 1 dedupe to request items that passed availability check\n' +
-            '• Batch mode accepts items array with mediaType and mediaId from dedupe results\n' +
-            '• For TV shows with specific seasons, extract season number from title and pass in seasons parameter\n' +
-            '• validateFirst=true (default) prevents duplicate requests',
+            'Request media with auto-confirmation for TV shows ≤24 episodes. Supports single or batch mode with validation and dry-run.\n\n' +
+            'Auto-confirmation: Movies always | TV ≤24 episodes | TV >24 episodes requires confirmed:true\n' +
+            'Typical flow: dedupe results → request_media (batch or single)\n' +
+            'Validation: validateFirst (default) checks duplicates | dryRun previews without requesting',
           inputSchema: {
             type: 'object',
             properties: {
@@ -484,7 +480,9 @@ class OverseerrServer {
         {
           name: 'manage_media_requests',
           description:
-            'Manage media requests: get, list, approve, decline, or delete. Supports summary mode for quick stats.',
+            'Manage media requests with get, list, approve, decline, delete actions. List supports summary mode and status filtering.\n\n' +
+            'Actions: get (single) | list (paginated/summary) | approve/decline/delete (single/batch)\n' +
+            'Filters: all, pending, approved, available, processing, unavailable, failed',
           inputSchema: {
             type: 'object',
             properties: {
@@ -531,7 +529,9 @@ class OverseerrServer {
         {
           name: 'get_media_details',
           description:
-            'Get detailed information about media. Supports single or batch lookup with level control (basic/standard/full).',
+            'Get media information with level control. Supports single item or batch lookup.\n\n' +
+            'Levels: basic (core data) | standard (with genres/runtime) | full (all fields)\n' +
+            'Fields: specify exact fields as alternative to level',
           inputSchema: {
             type: 'object',
             properties: {
@@ -850,6 +850,7 @@ class OverseerrServer {
               isActionable: true,
               franchiseInfo: `Season ${seasonNumber} of ${details.name || bestMatch.name}`,
             };
+            // Auto-add enhanced details if requested
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, seasonNumber, includeSeason);
             }
@@ -938,6 +939,7 @@ class OverseerrServer {
               isActionable: true,
               franchiseInfo: franchiseInfo,
             };
+            // Auto-add enhanced details if requested
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
@@ -955,6 +957,7 @@ class OverseerrServer {
               reasonCode: 'ALREADY_AVAILABLE',
               isActionable: false,
             };
+            // Auto-add enhanced details if requested
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
@@ -973,6 +976,7 @@ class OverseerrServer {
               reasonCode: 'ALREADY_REQUESTED',
               isActionable: false,
             };
+            // Auto-add enhanced details if requested
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
@@ -988,6 +992,7 @@ class OverseerrServer {
             reasonCode: 'AVAILABLE_FOR_REQUEST',
             isActionable: true,
           };
+          // Auto-add enhanced details if requested
           if (requestedFields.length > 0) {
             return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
           }
@@ -1311,11 +1316,9 @@ class OverseerrServer {
     // Multi-season confirmation check
     if (mediaType === 'tv' && !confirmed) {
       const requireConfirm = process.env.REQUIRE_MULTI_SEASON_CONFIRM !== 'false';
-      const requestingAll = seasons === 'all';
-      const requestingMultiple = Array.isArray(seasons) && seasons.length > 1;
-
-      if (requireConfirm && (requestingAll || requestingMultiple)) {
-        // Get details to show what will be requested
+      
+      if (requireConfirm && seasons) {
+        // Get details to calculate episode count
         const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
         const details = response.data;
 
@@ -1324,27 +1327,44 @@ class OverseerrServer {
           ? Array.from({ length: totalSeasons }, (_, i) => i + 1)
           : seasons as number[];
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                requiresConfirmation: true,
-                media: {
-                  title: details.name,
-                  totalSeasons,
-                  totalEpisodes: details.numberOfEpisodes,
-                  requestingSeasons: seasonsToRequest,
-                },
-                message: `This will request ${seasonsToRequest.length} season(s) of ${details.name}. Add "confirmed: true" to proceed.`,
-                confirmWith: {
-                  ...args,
-                  confirmed: true,
-                },
-              }, null, 2),
-            },
-          ],
-        };
+        // Calculate total episode count for requested seasons
+        let totalEpisodes = 0;
+        if (details.seasons) {
+          seasonsToRequest.forEach(seasonNum => {
+            const seasonData = details.seasons?.find(s => s.seasonNumber === seasonNum);
+            if (seasonData) {
+              totalEpisodes += seasonData.episodeCount;
+            }
+          });
+        }
+
+        // Only require confirmation if episode count exceeds threshold (24)
+        const EPISODE_THRESHOLD = 24;
+        if (totalEpisodes > EPISODE_THRESHOLD) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  requiresConfirmation: true,
+                  media: {
+                    title: details.name,
+                    totalSeasons,
+                    totalEpisodes: details.numberOfEpisodes,
+                    requestingSeasons: seasonsToRequest,
+                    requestingEpisodes: totalEpisodes,
+                    threshold: EPISODE_THRESHOLD,
+                  },
+                  message: `This will request ${seasonsToRequest.length} season(s) with ${totalEpisodes} episodes of ${details.name}. Add "confirmed: true" to proceed.`,
+                  confirmWith: {
+                    ...args,
+                    confirmed: true,
+                  },
+                }, null, 2),
+              },
+            ],
+          };
+        }
       }
     }
 

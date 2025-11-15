@@ -17,9 +17,15 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that pr
 ### New Features
 - 🎯 **Batch Dedupe Mode** - Check 50-100 titles in one call (perfect for anime season workflows)
 - 🔄 **Smart Caching** - 70-85% API call reduction with configurable TTLs
-- 🛡️ **Multi-Season Confirmation** - Prevents accidental bulk downloads
+- 🛡️ **Smart Confirmation** - Episode threshold (24) for TV shows prevents accidental bulk downloads
 - ⚡ **Built-in Retry Logic** - Exponential backoff for reliability
 - 🎨 **Compact Formats** - Token-efficient responses by default
+
+### Bug Fixes
+- Improved media type detection (95%+ accuracy)
+- Fixed special character handling (apostrophes, exclamation marks)
+- Fixed season 0 exclusion in availability checks
+- Fixed data consistency for NOT_FOUND results
 
 ## What is MCP?
 
