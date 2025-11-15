@@ -6,27 +6,6 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that provides AI assistants with direct integration to [Overseerr](https://overseerr.dev/), enabling automated media discovery, requests, and management for your Plex ecosystem.
 
-## What's New in v1.1.0 🚀
-
-### Major Performance Improvements
-- **99% fewer API calls** for batch operations (150-300 → 1)
-- **88% token reduction** with compact response formats
-- **90% faster** execution (2-3 min → 10-15 sec)
-- **4 consolidated tools** (down from 8) for clearer AI understanding
-
-### New Features
-- 🎯 **Batch Dedupe Mode** - Check 50-100 titles in one call (perfect for anime season workflows)
-- 🔄 **Smart Caching** - 70-85% API call reduction with configurable TTLs
-- 🛡️ **Smart Confirmation** - Episode threshold (24) for TV shows prevents accidental bulk downloads
-- ⚡ **Built-in Retry Logic** - Exponential backoff for reliability
-- 🎨 **Compact Formats** - Token-efficient responses by default
-
-### Bug Fixes
-- Improved media type detection (95%+ accuracy)
-- Fixed special character handling (apostrophes, exclamation marks)
-- Fixed season 0 exclusion in availability checks
-- Fixed data consistency for NOT_FOUND results
-
 ## What is MCP?
 
 The Model Context Protocol (MCP) is an open protocol that enables seamless integration between AI applications and external data sources. This server implements MCP to give AI assistants like Claude the ability to interact with your Overseerr instance.
