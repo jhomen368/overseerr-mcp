@@ -2,9 +2,17 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/overseerr-mcp/pkgs/container/overseerr-mcp)
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
+[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that provides AI assistants with direct integration to [Overseerr](https://overseerr.dev/), enabling automated media discovery, requests, and management for your Plex ecosystem.
+
+## What's New in v1.2.2 🚀
+
+### Bug Fixes
+- **Season 0 (Specials) Exclusion** - Fixed `seasons: "all"` automatically requesting season 0
+  - Season 0 (specials) is now excluded when using `seasons: "all"`
+  - To request specials, explicitly include 0 in array: `seasons: [0, 1, 2]`
+  - Prevents unwanted specials downloads for batch requests
 
 ## What's New in v1.2.1 🚀
 

@@ -126,7 +126,7 @@ class OverseerrServer {
     this.server = new Server(
       {
         name: 'overseerr-mcp',
-        version: '1.2.1',
+        version: '1.2.2',
       },
       {
         capabilities: {
@@ -298,10 +298,8 @@ class OverseerrServer {
         {
           name: 'search_media',
           description:
-            'Search movies/TV shows with single, batch, or dedupe modes. Dedupe mode checks availability and returns actionable status for batch processing.\n\n' +
-            'Modes: single query | multi-query batch | dedupe (availability check)\n' +
-            'Workflows: Pass 1 dedupe → Pass 2 autoRequest | manual dedupe → selective request_media\n' +
-            'Status codes: NOT_FOUND, ALREADY_AVAILABLE, ALREADY_REQUESTED, SEASON_AVAILABLE, SEASON_REQUESTED, AVAILABLE_FOR_REQUEST',
+            'Search movies/TV with single/batch/dedupe modes. Dedupe returns actionable status for batch processing.\n' +
+            'Status: NOT_FOUND | ALREADY_AVAILABLE | ALREADY_REQUESTED | SEASON_AVAILABLE | SEASON_REQUESTED | AVAILABLE_FOR_REQUEST',
           inputSchema: {
             type: 'object',
             properties: {
@@ -316,38 +314,38 @@ class OverseerrServer {
               },
               dedupeMode: {
                 type: 'boolean',
-                description: 'Enable batch dedupe checking (optimized for Pass 1 workflow)',
+                description: 'Batch dedupe with availability check',
                 default: false,
               },
               titles: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Array of titles to check in dedupe mode',
+                description: 'Titles to check (dedupe mode)',
               },
               autoNormalize: {
                 type: 'boolean',
-                description: 'Auto-normalize titles (strip Season N, Part N, etc.)',
+                description: 'Strip "Season N"/"Part N" from titles',
                 default: false,
               },
               autoRequest: {
                 type: 'boolean',
-                description: 'Auto-request items that pass dedupe check (Pass 2 workflow - requires dedupeMode)',
+                description: 'Auto-request passing items (requires dedupeMode)',
                 default: false,
               },
               requestOptions: {
                 type: 'object',
-                description: 'Options for auto-request functionality (only used when autoRequest is true)',
+                description: 'AutoRequest options',
                 properties: {
                   seasons: {
                     oneOf: [
                       { type: 'array', items: { type: 'number' } },
                       { type: 'string', enum: ['all'] },
                     ],
-                    description: 'Seasons to request for TV shows',
+                    description: 'TV seasons. "all"=no season 0 (specials); [0,1,2]=with specials',
                   },
                   is4k: {
                     type: 'boolean',
-                    description: 'Request 4K version',
+                    description: 'Request 4K',
                     default: false,
                   },
                   serverId: { type: 'number' },
@@ -355,25 +353,25 @@ class OverseerrServer {
                   rootFolder: { type: 'string' },
                   dryRun: {
                     type: 'boolean',
-                    description: 'Preview auto-requests without actually requesting',
+                    description: 'Preview only',
                     default: false,
                   },
                 },
               },
               checkAvailability: {
                 type: 'boolean',
-                description: 'Check if results are already requested/available (slower, fetches details for each result)',
+                description: 'Check status (slower, fetches per-result details)',
                 default: false,
               },
               format: {
                 type: 'string',
                 enum: ['compact', 'standard', 'full'],
-                description: 'Response format (default: compact)',
+                description: 'Response format',
                 default: 'compact',
               },
               limit: {
                 type: 'number',
-                description: 'Max results to return',
+                description: 'Max results',
               },
               page: {
                 type: 'number',
@@ -387,23 +385,19 @@ class OverseerrServer {
               },
               includeDetails: {
                 type: 'object',
-                description: 'Include additional media details in dedupe results (dedupe mode only). Enriches results with specific fields from cached data.',
+                description: 'Add details to dedupe results (dedupe only)',
                 properties: {
                   fields: {
                     type: 'array',
                     items: { type: 'string' },
                     description: 
-                      'Fields to include. Available fields:\n' +
-                      '• Basic (no extra cost): mediaType, year, posterPath\n' +
-                      '• Standard (from cache): rating, overview, genres, runtime\n' +
-                      '• TV-Specific: numberOfSeasons, numberOfEpisodes, seasons (with availability status)\n' +
-                      '• Advanced: releaseDate, firstAirDate, originalTitle, originalName, popularity, backdropPath, homepage, status, tagline\n' +
-                      '• Availability: mediaStatus, hasRequests, requestCount\n' +
-                      'Note: targetSeason is auto-added for titles with season numbers when seasons field is requested',
+                      'Basic: mediaType,year,posterPath | Standard: rating,overview,genres,runtime | ' +
+                      'TV: numberOfSeasons,numberOfEpisodes,seasons | Advanced: releaseDate,firstAirDate,originalTitle,originalName,popularity,backdropPath,homepage,status,tagline | ' +
+                      'Availability: mediaStatus,hasRequests,requestCount | targetSeason auto-adds for season numbers',
                   },
                   includeSeason: {
                     type: 'boolean',
-                    description: 'Auto-include targetSeason info for TV shows with season in title (default: true)',
+                    description: 'Auto-add targetSeason for TV with season in title',
                     default: true,
                   },
                 },
@@ -414,22 +408,20 @@ class OverseerrServer {
         {
           name: 'request_media',
           description:
-            'Request media with auto-confirmation for TV shows ≤24 episodes. Supports single or batch mode with validation and dry-run.\n\n' +
-            'Auto-confirmation: Movies always | TV ≤24 episodes | TV >24 episodes requires confirmed:true\n' +
-            'Typical flow: dedupe results → request_media (batch or single)\n' +
-            'Validation: validateFirst (default) checks duplicates | dryRun previews without requesting\n' +
-            'TV shows require seasons parameter (array or "all")',
+            'Request media with auto-confirm for TV ≤24 eps. Single/batch with validation.\n' +
+            'Confirm: Movies auto | TV ≤24 eps auto | TV >24 eps needs confirmed:true\n' +
+            'TV needs seasons (array or "all"). "all"=no specials; [0,1,2]=with specials',
           inputSchema: {
             type: 'object',
             properties: {
               mediaType: {
                 type: 'string',
                 enum: ['movie', 'tv'],
-                description: 'Media type (single mode)',
+                description: 'Media type (single)',
               },
               mediaId: {
                 type: 'number',
-                description: 'TMDB ID (single mode)',
+                description: 'TMDB ID (single)',
               },
               items: {
                 type: 'array',
@@ -443,20 +435,20 @@ class OverseerrServer {
                         { type: 'array', items: { type: 'number' } },
                         { type: 'string', enum: ['all'] },
                       ],
-                      description: 'Seasons to request (REQUIRED for TV shows, not used for movies)',
+                      description: 'TV seasons (REQUIRED). "all"=no season 0 (specials); [0,1,2]=with specials',
                     },
                     is4k: { type: 'boolean' },
                   },
                   required: ['mediaType', 'mediaId'],
                 },
-                description: 'Multiple items to request (batch mode)',
+                description: 'Batch items',
               },
               seasons: {
                 oneOf: [
                   { type: 'array', items: { type: 'number' } },
                   { type: 'string', enum: ['all'] },
                 ],
-                description: 'Seasons to request (TV shows)',
+                description: 'TV seasons. "all"=no season 0 (specials); [0,1,2]=with specials',
               },
               is4k: {
                 type: 'boolean',
@@ -468,17 +460,17 @@ class OverseerrServer {
               rootFolder: { type: 'string' },
               validateFirst: {
                 type: 'boolean',
-                description: 'Check if already requested',
+                description: 'Check existing',
                 default: true,
               },
               dryRun: {
                 type: 'boolean',
-                description: 'Preview without requesting',
+                description: 'Preview only',
                 default: false,
               },
               confirmed: {
                 type: 'boolean',
-                description: 'Confirm multi-season request',
+                description: 'Confirm multi-season',
                 default: false,
               },
             },
@@ -487,25 +479,24 @@ class OverseerrServer {
         {
           name: 'manage_media_requests',
           description:
-            'Manage media requests with get, list, approve, decline, delete actions. List supports summary mode and status filtering.\n\n' +
-            'Actions: get (single) | list (paginated/summary) | approve/decline/delete (single/batch)\n' +
-            'Filters: all, pending, approved, available, processing, unavailable, failed',
+            'Manage requests: get/list/approve/decline/delete. Supports filters and batching.\n' +
+            'Filters: all|pending|approved|available|processing|unavailable|failed',
           inputSchema: {
             type: 'object',
             properties: {
               action: {
                 type: 'string',
                 enum: ['get', 'list', 'approve', 'decline', 'delete'],
-                description: 'Action to perform',
+                description: 'Action',
               },
               requestId: {
                 type: 'number',
-                description: 'Request ID (single operations)',
+                description: 'Request ID (single)',
               },
               requestIds: {
                 type: 'array',
                 items: { type: 'number' },
-                description: 'Request IDs (batch operations)',
+                description: 'Request IDs (batch)',
               },
               format: {
                 type: 'string',
@@ -514,7 +505,7 @@ class OverseerrServer {
               },
               summary: {
                 type: 'boolean',
-                description: 'Return summary stats instead of full list',
+                description: 'Stats instead of list',
                 default: false,
               },
               filter: {
@@ -536,20 +527,18 @@ class OverseerrServer {
         {
           name: 'get_media_details',
           description:
-            'Get media information with level control. Supports single item or batch lookup.\n\n' +
-            'Levels: basic (core data) | standard (with genres/runtime) | full (all fields)\n' +
-            'Fields: specify exact fields as alternative to level',
+            'Get media details. Single/batch with level control (basic/standard/full).',
           inputSchema: {
             type: 'object',
             properties: {
               mediaType: {
                 type: 'string',
                 enum: ['movie', 'tv'],
-                description: 'Media type (single mode)',
+                description: 'Media type (single)',
               },
               mediaId: {
                 type: 'number',
-                description: 'TMDB ID (single mode)',
+                description: 'TMDB ID (single)',
               },
               items: {
                 type: 'array',
@@ -561,7 +550,7 @@ class OverseerrServer {
                   },
                   required: ['mediaType', 'mediaId'],
                 },
-                description: 'Multiple items (batch mode)',
+                description: 'Batch items',
               },
               level: {
                 type: 'string',
@@ -572,7 +561,7 @@ class OverseerrServer {
               fields: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Specific fields to return',
+                description: 'Specific fields',
               },
               format: {
                 type: 'string',
@@ -793,7 +782,9 @@ class OverseerrServer {
           let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
           
           if (!details) {
-            const detailsResponse = await this.axiosInstance.get<MediaDetails>(`/tv/${bestMatch.id}`);
+            const detailsResponse = await this.axiosInstance.get<MediaDetails>(
+              `/tv/${bestMatch.id}`
+            );
             details = detailsResponse.data;
             details.mediaType = 'tv';
             this.cache.set('mediaDetails', detailsCacheKey, details);
@@ -1297,15 +1288,6 @@ class OverseerrServer {
             mediaId: dedupeItem.id,
           });
         }
-      } else {
-        dedupeResults.push({
-          title: result.item,
-          id: 0,
-          mediaType: undefined,  // Ensure undefined for errors (Bug #13)
-          status: 'blocked', // Changed to pass for NOT_FOUND items not in library
-          reasonCode: 'NOT_FOUND',
-          isActionable: false,
-        });
       }
     });
 
@@ -1337,14 +1319,32 @@ class OverseerrServer {
           autoRequestQueue,
           async (item) => {
             try {
+              // Expand "all" to actual season numbers (excluding season 0 - specials)
+              let seasonsToRequest = item.seasons;
+              if (item.mediaType === 'tv' && item.seasons === 'all') {
+                const detailsResponse = await this.axiosInstance.get<MediaDetails>(`/tv/${item.mediaId}`);
+                const details = detailsResponse.data;
+                
+                // Get all regular seasons excluding season 0 (specials)
+                const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
+                seasonsToRequest = regularSeasons.map(s => s.seasonNumber);
+                
+                // If no regular seasons found, fall back to numberOfSeasons
+                if (seasonsToRequest.length === 0 && details.numberOfSeasons) {
+                  seasonsToRequest = Array.from({ length: details.numberOfSeasons }, (_, i) => i + 1);
+                  // Filter out season 0 if it's in the list
+                  seasonsToRequest = seasonsToRequest.filter(s => s > 0);
+                }
+              }
+
               const requestBody: any = {
                 mediaType: item.mediaType,
                 mediaId: item.mediaId,
                 is4k: args.requestOptions?.is4k || false,
               };
 
-              if (item.mediaType === 'tv' && item.seasons) {
-                requestBody.seasons = item.seasons;
+              if (item.mediaType === 'tv' && seasonsToRequest) {
+                requestBody.seasons = seasonsToRequest;
               }
               if (args.requestOptions?.serverId) requestBody.serverId = args.requestOptions.serverId;
               if (args.requestOptions?.profileId) requestBody.profileId = args.requestOptions.profileId;
@@ -1361,7 +1361,7 @@ class OverseerrServer {
                 requestId: response.data.id,
                 mediaId: item.mediaId,
                 mediaType: item.mediaType,
-                seasons: item.seasons,
+                seasons: seasonsToRequest,
                 status: response.data.status
               };
             } catch (error: any) {
@@ -1448,6 +1448,27 @@ class OverseerrServer {
       );
     }
 
+    // Expand "all" to actual season numbers (excluding season 0) early in the function
+    let expandedSeasons: number[] | undefined = undefined;
+    if (mediaType === 'tv' && seasons) {
+      if (seasons === 'all') {
+        const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
+        const details = response.data;
+        
+        // Get all regular seasons (exclude season 0 - specials)
+        const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
+        expandedSeasons = regularSeasons.map(s => s.seasonNumber);
+        
+        // If no regular seasons found, fall back to numberOfSeasons
+        if (expandedSeasons.length === 0 && details.numberOfSeasons) {
+          expandedSeasons = Array.from({ length: details.numberOfSeasons }, (_, i) => i + 1);
+        }
+      } else {
+        // Already an array, use as-is
+        expandedSeasons = seasons as number[];
+      }
+    }
+
     // Validate first if requested
     if (validateFirst) {
       const detailsCacheKey = { mediaType, mediaId };
@@ -1500,23 +1521,21 @@ class OverseerrServer {
     }
 
     // Multi-season confirmation check
-    if (mediaType === 'tv' && !confirmed) {
+    if (mediaType === 'tv' && !confirmed && expandedSeasons) {
       const requireConfirm = process.env.REQUIRE_MULTI_SEASON_CONFIRM !== 'false';
       
-      if (requireConfirm && seasons) {
+      if (requireConfirm) {
         // Get details to calculate episode count
         const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
         const details = response.data;
 
         const totalSeasons = details.numberOfSeasons || 0;
-        const seasonsToRequest = seasons === 'all' 
-          ? Array.from({ length: totalSeasons }, (_, i) => i + 1)
-          : seasons as number[];
+        const seasonsToRequest = expandedSeasons;
 
         // Calculate total episode count for requested seasons
         let totalEpisodes = 0;
         if (details.seasons) {
-          seasonsToRequest.forEach(seasonNum => {
+          seasonsToRequest.forEach((seasonNum: number) => {
             const seasonData = details.seasons?.find(s => s.seasonNumber === seasonNum);
             if (seasonData) {
               totalEpisodes += seasonData.episodeCount;
@@ -1571,7 +1590,7 @@ class OverseerrServer {
                 title: details.title || details.name,
                 mediaType,
                 mediaId,
-                seasons: mediaType === 'tv' ? seasons : undefined,
+                seasons: mediaType === 'tv' ? expandedSeasons : undefined,
                 is4k: is4k || false,
               },
               message: 'Dry run - no request was made. Remove "dryRun: true" to actually request.',
@@ -1588,8 +1607,9 @@ class OverseerrServer {
       is4k: is4k || false,
     };
 
-    if (mediaType === 'tv' && seasons) {
-      requestBody.seasons = seasons === 'all' ? 'all' : seasons;
+    // Use expandedSeasons (array) to ensure season 0 is not included
+    if (mediaType === 'tv' && expandedSeasons) {
+      requestBody.seasons = expandedSeasons;
     }
 
     if (args.serverId) requestBody.serverId = args.serverId;
@@ -2100,7 +2120,7 @@ class OverseerrServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Overseerr MCP server v1.2.1 running on stdio');
+    console.error('Overseerr MCP server v1.2.2 running on stdio');
   }
 
   async runHttp(port: number = 8085) {
@@ -2110,7 +2130,7 @@ class OverseerrServer {
     const app = express();
 
     app.get('/health', (_req: any, res: any) => {
-      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.1' });
+      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.2' });
     });
 
     app.get('/cache/stats', (_req: any, res: any) => {
@@ -2128,7 +2148,7 @@ class OverseerrServer {
     });
 
     app.listen(port, () => {
-      console.error(`Overseerr MCP server v1.2.1 running on HTTP port ${port}`);
+      console.error(`Overseerr MCP server v1.2.2 running on HTTP port ${port}`);
       console.error(`MCP endpoint: http://localhost:${port}/mcp`);
       console.error(`Health check: http://localhost:${port}/health`);
       console.error(`Cache stats: http://localhost:${port}/cache/stats`);
