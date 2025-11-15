@@ -94,3 +94,105 @@ export function isSequelTitle(title: string): boolean {
 
   return patterns.some(pattern => pattern.test(title));
 }
+
+/**
+ * Infers the expected media type based on title patterns
+ * Returns 'tv' if title contains season indicators, otherwise 'any'
+ */
+export function inferExpectedMediaType(originalTitle: string): 'tv' | 'movie' | 'any' {
+  // If title has season indicators, expect TV show
+  if (isSequelTitle(originalTitle) || extractSeasonNumber(originalTitle) !== null) {
+    return 'tv';
+  }
+  // Default to any (no preference)
+  return 'any';
+}
+
+/**
+ * Selects the best match from search results with confidence scoring
+ * Prioritizes matches that align with expected media type
+ */
+export function selectBestMatch(
+  results: any[],
+  expectedType: 'tv' | 'movie' | 'any',
+  searchTitle: string
+): { match: any; confidence: 'high' | 'medium' | 'low' } {
+  if (!results || results.length === 0) {
+    throw new Error('No results to select from');
+  }
+
+  // 1. Filter by expected type if specified
+  if (expectedType !== 'any') {
+    const typeFiltered = results.filter(r => r.mediaType === expectedType);
+    
+    // If we have type-filtered results, use first one with high confidence
+    if (typeFiltered.length > 0) {
+      return { match: typeFiltered[0], confidence: 'high' };
+    }
+  }
+
+  // 2. Fallback: Check if first result title closely matches search
+  const firstResult = results[0];
+  const firstResultTitle = (firstResult.title || firstResult.name || '').toLowerCase();
+  const normalizedSearch = searchTitle.toLowerCase();
+  
+  // Simple similarity check - exact substring match or very similar
+  const titleSimilarity = calculateSimilarity(normalizedSearch, firstResultTitle);
+  
+  if (titleSimilarity > 0.8) {
+    return { match: firstResult, confidence: 'medium' };
+  }
+
+  // 3. Low confidence - might be wrong match
+  return { match: firstResult, confidence: 'low' };
+}
+
+/**
+ * Calculate simple similarity score between two strings
+ * Returns value between 0 and 1
+ */
+function calculateSimilarity(str1: string, str2: string): number {
+  // Exact match
+  if (str1 === str2) return 1.0;
+  
+  // Check if one contains the other
+  if (str1.includes(str2) || str2.includes(str1)) {
+    return 0.9;
+  }
+  
+  // Simple word overlap scoring
+  const words1 = str1.split(/\s+/).filter(w => w.length > 2);
+  const words2 = str2.split(/\s+/).filter(w => w.length > 2);
+  
+  if (words1.length === 0 || words2.length === 0) return 0;
+  
+  const commonWords = words1.filter(w => words2.includes(w));
+  const similarity = (commonWords.length * 2) / (words1.length + words2.length);
+  
+  return similarity;
+}
+
+/**
+ * Enhanced URL encoding for search queries
+ * Handles special characters that cause issues with Overseerr/TMDB API
+ */
+export function encodeSearchQuery(query: string): string {
+  // Start with standard encoding
+  let encoded = encodeURIComponent(query);
+  
+  // Manually encode characters that cause issues with Overseerr/TMDB API
+  // Based on RFC 3986 and observed failures
+  const additionalEncoding: Record<string, string> = {
+    '!': '%21',  // Exclamation - causes 400 errors
+    "'": '%27',  // Apostrophe - causes 400 errors
+    '(': '%28',  // Parentheses
+    ')': '%29',
+    '*': '%2A',  // Asterisk
+  };
+  
+  for (const [char, encodedChar] of Object.entries(additionalEncoding)) {
+    encoded = encoded.replace(new RegExp('\\' + char, 'g'), encodedChar);
+  }
+  
+  return encoded;
+}

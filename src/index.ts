@@ -9,7 +9,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios, { AxiosInstance } from 'axios';
 import { CacheManager } from './utils/cache.js';
-import { normalizeTitle, extractSeasonNumber } from './utils/normalize.js';
+import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch, encodeSearchQuery } from './utils/normalize.js';
 import { withRetry, batchWithRetry } from './utils/retry.js';
 import {
   SearchResult,
@@ -656,7 +656,7 @@ class OverseerrServer {
 
     // Search with retry - build URL manually with encoded query
     const result = await withRetry(async () => {
-      const encodedQuery = encodeURIComponent(query);
+      const encodedQuery = encodeSearchQuery(query);
       const page = args.page || 1;
       const language = args.language || 'en';
       const url = `/search?query=${encodedQuery}&page=${page}&language=${language}`;
@@ -681,7 +681,7 @@ class OverseerrServer {
         if (cached) return cached;
 
         // Build URL manually with encoded query
-        const encodedQuery = encodeURIComponent(query);
+        const encodedQuery = encodeSearchQuery(query);
         const language = args.language || 'en';
         const url = `/search?query=${encodedQuery}&page=1&language=${language}`;
         const response = await this.axiosInstance.get<SearchResult>(url);
@@ -743,7 +743,7 @@ class OverseerrServer {
         let searchResult = this.cache.get<SearchResult>('search', cacheKey);
         
         if (!searchResult) {
-          const encodedQuery = encodeURIComponent(searchTitle);
+          const encodedQuery = encodeSearchQuery(searchTitle);
           const language = args.language || 'en';
           const url = `/search?query=${encodedQuery}&page=1&language=${language}`;
           const response = await this.axiosInstance.get<SearchResult>(url);
@@ -760,13 +760,21 @@ class OverseerrServer {
             status: 'pass' as const,
             reasonCode: 'NOT_FOUND',
             isActionable: false,
+            note: 'Not found in TMDB',
           };
           // No enrichment for not found items
           return baseResult;
         }
 
-        // Get the first/best match
-        const bestMatch = searchResult.results[0];
+        // Smart result selection with media type validation
+        const expectedType = inferExpectedMediaType(originalTitle);
+        const selection = selectBestMatch(searchResult.results, expectedType, searchTitle);
+        const bestMatch = selection.match;
+        
+        // Log low confidence matches for debugging
+        if (selection.confidence === 'low') {
+          console.error(`[WARN] Low confidence match for "${originalTitle}": expected ${expectedType}, got ${bestMatch.mediaType} (${bestMatch.title || bestMatch.name})`);
+        }
         
         // Check if it's TV and we need details for season checking
         if (bestMatch.mediaType === 'tv') {
@@ -901,7 +909,7 @@ class OverseerrServer {
               return baseResult;
             }
             
-            // Check partial availability/requests for enhanced franchiseInfo
+            // Partial availability/requests - check enhanced franchise info
             const availableSeasons = mediaInfo?.seasons?.filter(s => s.seasonNumber > 0 && s.status === 5).map(s => s.seasonNumber).sort((a, b) => a - b) || [];
             const requestedSeasons = regularSeasons.filter(season => 
               mediaInfo?.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === season.seasonNumber))
@@ -1003,7 +1011,7 @@ class OverseerrServer {
           if (mediaInfo && mediaInfo.status) {
             const statusStr = this.getMediaStatusString(mediaInfo.status);
             
-            // Check if movie is AVAILABLE in library
+            // Check if movie is AVAILABLE
             if (mediaInfo.status === 5) {
               const baseResult: DedupeResult = {
                 title: originalTitle,
@@ -1053,7 +1061,7 @@ class OverseerrServer {
             }
           }
           
-          // Not requested - it's a pass (movie case)
+          // Not requested - it's a pass
           const baseResult: DedupeResult = {
             title: originalTitle,
             id: bestMatch.id,
@@ -1108,6 +1116,7 @@ class OverseerrServer {
         dedupeResults.push({
           title: result.item,
           id: 0,
+          mediaType: undefined,  // Ensure undefined for errors (Bug #13)
           status: 'pass',
           reasonCode: 'NOT_FOUND',
           isActionable: false,
