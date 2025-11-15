@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-11-15
+
+### Fixed
+- **Bug #19**: TV show requests without seasons parameter causing HTTP 500 errors
+  - Added validation to ensure TV show requests include the required `seasons` parameter
+  - Returns clear error message: "seasons parameter is required for TV show requests"
+  - Added default 'all' seasons fallback for auto-request workflow when no season specified
+  - Prevents Overseerr API error: "Cannot read properties of undefined (reading 'filter')"
+  - Fixed in handleSingleRequest method (src/index.ts line ~1433)
+  - Updated auto-request queue processing for TV shows vs movies (src/index.ts line ~1269)
+  - Updated tool description to clarify seasons requirement for TV shows
+
+### Changed
+- Tool description for `request_media` now explicitly states: "TV shows require seasons parameter (array or 'all')"
+- Auto-request workflow now distinguishes between TV shows (requires seasons) and movies (no seasons needed)
+
 ## [1.2.0] - 2025-11-15
 
 ### Fixed

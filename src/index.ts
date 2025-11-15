@@ -126,7 +126,7 @@ class OverseerrServer {
     this.server = new Server(
       {
         name: 'overseerr-mcp',
-        version: '1.1.0',
+        version: '1.2.1',
       },
       {
         capabilities: {
@@ -282,6 +282,7 @@ class OverseerrServer {
           runtime: details.runtime,
           numberOfSeasons: details.numberOfSeasons,
           numberOfEpisodes: details.numberOfEpisodes,
+          seasons: details.seasons,
           mediaInfo: details.mediaInfo,
         };
 
@@ -416,7 +417,8 @@ class OverseerrServer {
             'Request media with auto-confirmation for TV shows ≤24 episodes. Supports single or batch mode with validation and dry-run.\n\n' +
             'Auto-confirmation: Movies always | TV ≤24 episodes | TV >24 episodes requires confirmed:true\n' +
             'Typical flow: dedupe results → request_media (batch or single)\n' +
-            'Validation: validateFirst (default) checks duplicates | dryRun previews without requesting',
+            'Validation: validateFirst (default) checks duplicates | dryRun previews without requesting\n' +
+            'TV shows require seasons parameter (array or "all")',
           inputSchema: {
             type: 'object',
             properties: {
@@ -441,6 +443,7 @@ class OverseerrServer {
                         { type: 'array', items: { type: 'number' } },
                         { type: 'string', enum: ['all'] },
                       ],
+                      description: 'Seasons to request (REQUIRED for TV shows, not used for movies)',
                     },
                     is4k: { type: 'boolean' },
                   },
@@ -1063,7 +1066,7 @@ class OverseerrServer {
               franchiseInfo += ` - ${statusParts.join(', ')}`;
             }
             
-            // Some seasons in library/requested,但 not all - it's a pass
+            // Some seasons in library/requested, but not all - it's a pass
             const baseResult: DedupeResult = {
               title: originalTitle,
               id: bestMatch.id,
@@ -1277,12 +1280,21 @@ class OverseerrServer {
           } else if (args.requestOptions?.seasons) {
             // Use requestOptions.seasons for TV shows without specific season
             seasonsToRequest = args.requestOptions.seasons;
+          } else {
+            // Default to 'all' if no season specified
+            seasonsToRequest = 'all';
           }
           
           autoRequestQueue.push({
             mediaType: dedupeItem.mediaType,
             mediaId: dedupeItem.id,
             seasons: seasonsToRequest,
+          });
+        } else if (autoRequest && dedupeItem.isActionable === true && dedupeItem.mediaType === 'movie') {
+          // Movies don't need seasons
+          autoRequestQueue.push({
+            mediaType: dedupeItem.mediaType,
+            mediaId: dedupeItem.id,
           });
         }
       } else {
@@ -1311,7 +1323,7 @@ class OverseerrServer {
         // Dry run - don't actually request, just show what would be requested
         autoRequestResults = {
           dryRun: true,
-          totalRequested: autoRequestQueue.length,
+          totalQueued: autoRequestQueue.length,
           wouldRequest: autoRequestQueue.map(item => ({
             mediaType: item.mediaType,
             mediaId: item.mediaId,
@@ -1334,8 +1346,6 @@ class OverseerrServer {
               if (item.mediaType === 'tv' && item.seasons) {
                 requestBody.seasons = item.seasons;
               }
-
-              // Add optional request parameters from requestOptions
               if (args.requestOptions?.serverId) requestBody.serverId = args.requestOptions.serverId;
               if (args.requestOptions?.profileId) requestBody.profileId = args.requestOptions.profileId;
               if (args.requestOptions?.rootFolder) requestBody.rootFolder = args.requestOptions.rootFolder;
@@ -1369,6 +1379,7 @@ class OverseerrServer {
         const failedRequests = requestResults.filter(r => !r.success || !r.result?.success);
 
         autoRequestResults = {
+          enqueue: true,
           totalRequested: autoRequestQueue.length,
           successful: successfulRequests.length,
           failed: failedRequests.length,
@@ -1428,6 +1439,14 @@ class OverseerrServer {
 
   private async handleSingleRequest(args: RequestMediaArgs) {
     const { mediaType, mediaId, seasons, is4k, validateFirst, dryRun, confirmed } = args;
+
+    // Validate TV show requests have seasons specified
+    if (mediaType === 'tv' && !seasons) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'seasons parameter is required for TV show requests. Use seasons: [1,2,3] for specific seasons or seasons: "all" for all seasons.'
+      );
+    }
 
     // Validate first if requested
     if (validateFirst) {
@@ -1508,6 +1527,7 @@ class OverseerrServer {
         // Only require confirmation if episode count exceeds threshold (24)
         const EPISODE_THRESHOLD = 24;
         if (totalEpisodes > EPISODE_THRESHOLD) {
+          // Build message including episode count for context
           return {
             content: [
               {
@@ -1515,7 +1535,6 @@ class OverseerrServer {
                 text: JSON.stringify({
                   requiresConfirmation: true,
                   media: {
-                    title: details.name,
                     totalSeasons,
                     totalEpisodes: details.numberOfEpisodes,
                     requestingSeasons: seasonsToRequest,
@@ -2081,7 +2100,7 @@ class OverseerrServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Overseerr MCP server v1.1.0 running on stdio');
+    console.error('Overseerr MCP server v1.2.1 running on stdio');
   }
 
   async runHttp(port: number = 8085) {
@@ -2091,7 +2110,7 @@ class OverseerrServer {
     const app = express();
 
     app.get('/health', (_req: any, res: any) => {
-      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.1.0' });
+      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.1' });
     });
 
     app.get('/cache/stats', (_req: any, res: any) => {
@@ -2109,7 +2128,7 @@ class OverseerrServer {
     });
 
     app.listen(port, () => {
-      console.error(`Overseerr MCP server v1.1.0 running on HTTP port ${port}`);
+      console.error(`Overseerr MCP server v1.2.1 running on HTTP port ${port}`);
       console.error(`MCP endpoint: http://localhost:${port}/mcp`);
       console.error(`Health check: http://localhost:${port}/health`);
       console.error(`Cache stats: http://localhost:${port}/cache/stats`);
