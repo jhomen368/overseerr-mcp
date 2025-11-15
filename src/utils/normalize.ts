@@ -111,12 +111,13 @@ export function inferExpectedMediaType(originalTitle: string): 'tv' | 'movie' | 
 /**
  * Selects the best match from search results with confidence scoring
  * Prioritizes matches that align with expected media type
+ * Returns primary match and alternates for validation
  */
 export function selectBestMatch(
   results: any[],
   expectedType: 'tv' | 'movie' | 'any',
   searchTitle: string
-): { match: any; confidence: 'high' | 'medium' | 'low' } {
+): { match: any; confidence: 'high' | 'medium' | 'low'; alternates: any[] } {
   if (!results || results.length === 0) {
     throw new Error('No results to select from');
   }
@@ -127,7 +128,11 @@ export function selectBestMatch(
     
     // If we have type-filtered results, use first one with high confidence
     if (typeFiltered.length > 0) {
-      return { match: typeFiltered[0], confidence: 'high' };
+      return { 
+        match: typeFiltered[0], 
+        confidence: 'high',
+        alternates: typeFiltered.slice(1) // Rest as fallbacks
+      };
     }
   }
 
@@ -140,11 +145,19 @@ export function selectBestMatch(
   const titleSimilarity = calculateSimilarity(normalizedSearch, firstResultTitle);
   
   if (titleSimilarity > 0.8) {
-    return { match: firstResult, confidence: 'medium' };
+    return { 
+      match: firstResult, 
+      confidence: 'medium',
+      alternates: results.slice(1) // Rest as fallbacks
+    };
   }
 
   // 3. Low confidence - might be wrong match
-  return { match: firstResult, confidence: 'low' };
+  return { 
+    match: firstResult, 
+    confidence: 'low',
+    alternates: results.slice(1) // Rest as fallbacks
+  };
 }
 
 /**

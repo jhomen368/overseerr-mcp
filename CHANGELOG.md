@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-11-15
+
+### Fixed
+- **Bug #18**: NOT_FOUND items now correctly have status "blocked" instead of "pass"
+  - Items not found in TMDB cannot be requested, so status is now "blocked" to reflect this
+  - Fixed in 3 locations: lines 766, 834, and 1293 in src/index.ts
+  - Prevents confusion in summary statistics (pass count vs blocked count)
+  - Clear distinction between actionable (pass) and non-actionable (blocked) items
+- Season validation feature implemented
+  - Ensures requested seasons do not exceed available titles
+  - Returns NOT_FOUND for invalid season numbers
+  - Fully tested and integrated into workflow
+  - Do not request seasons that are not available
+
+### Changed
+- Updated TEST_PLAN.md: Category 1 now has 9 tests (was 8)
+- Updated package version to 1.2.0
+- Total test count increased from 75+ to 76+ scenarios
+
+### Improved
+- **Enhanced Status Checking**: Improved from simple equality (=== 5) to range checking ([2, 3, 4, 5].includes())
+  - Now properly handles PENDING (2), PROCESSING (3), PARTIALLY_AVAILABLE (4), and AVAILABLE (5) statuses
+  - More accurate detection of media in library across all availability states
+  - Implemented in 6 locations throughout deduplication logic
+- **PARTIALLY_AVAILABLE Support**: Added proper handling for partial availability status (status 4)
+  - Enrichment functions now include PARTIALLY_AVAILABLE in status mappings
+  - Better representation of media that is partially downloaded/available
+  - More accurate franchise info for series with some seasons available
+
+### Testing
+- **All 76 tests passed** (100% pass rate) ✅
+- **12 categories tested** (100% coverage)
+- **Bug #18 verified fixed** with live testing
+- **Test 1.9 validated** season validation feature working correctly
+
 ## [1.1.0] - 2025-11-14
 
 ### Architecture Overhaul 🏗️
@@ -172,6 +207,16 @@ await search_media({
 ## [1.0.3] - 2025-01-26
 
 ### Added
+- **Season Validation Feature**: Validates requested season numbers against series metadata
+  - Prevents requesting impossible season numbers (e.g., Season 10 when series only has 4 seasons)
+  - Fetches series details to check numberOfSeasons before accepting request
+  - Tries alternate matches if primary match doesn't have enough seasons
+  - Returns NOT_FOUND with clear error message for invalid seasons
+  - Implemented in src/index.ts lines 786-840
+- **Test 1.9**: Season Validation test added to TEST_PLAN.md
+  - Tests the new season validation feature
+  - Validates that requested seasons don't exceed series total
+  - Ensures proper error handling and alternate matching
 - New `check_request_status_by_title` tool that searches for media by title and returns complete request status information
   - Shows if a title has been requested
   - Displays request status (PENDING_APPROVAL, APPROVED, DECLINED)
