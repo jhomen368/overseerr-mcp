@@ -9,8 +9,10 @@
 > **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server providing AI assistants with direct integration to [Overseerr](https://overseerr.dev/) for automated media discovery, requests, and management in your Plex ecosystem.**
 
 ## ✨ What's New in v1.2.3
-
-- **Documentation**: Complete README overhaul for clarity and professionalism
+- **Enhanced Security Features**
+  - Added automated security workflows (Dependabot, CodeQL, Trivy)
+  - Docker image hardening with non-root user and minimal base image
+  - Input validation for URLs and API keys
 - See [CHANGELOG.md](CHANGELOG.md) for full version history
 
 ## 🎯 Key Features
@@ -21,6 +23,21 @@
 - **🔄 Smart Caching** - 70-85% API call reduction
 - **🛡️ Safety Features** - Multi-season confirmation, validation
 - **📦 4 Powerful Tools** - Consolidated from 8 for clarity
+
+## 🔒 Security
+
+- **🤖 Automated Security Scanning**
+  - Dependabot for dependency updates
+  - CodeQL for code vulnerability analysis  
+  - Trivy for Docker image scanning
+- **🐳 Hardened Docker Images**
+  - Non-root user (mcpuser)
+  - Multi-stage builds
+  - Minimal Alpine base
+  - dumb-init process management
+- **✅ Input Validation**
+  - URL and API key format validation
+  - Fails fast with clear error messages
 
 ## 🛠️ Available Tools
 

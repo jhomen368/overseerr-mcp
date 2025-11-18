@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.3] - 2025-11-18
 
+### Added
+- **Automated Security Workflows**
+  - **Dependabot**: Automated dependency updates for npm, GitHub Actions, and Docker base images
+    - Weekly scans on Mondays with max 5 open PRs
+    - File: `.github/dependabot.yml`
+  - **CodeQL Security Scanning**: Static code analysis for vulnerabilities
+    - Runs on every push/PR to main + weekly schedule
+    - Uses security-extended queries for comprehensive coverage
+    - Reports to GitHub Security tab (non-blocking)
+    - File: `.github/workflows/codeql-analysis.yml`
+  - **Trivy Docker Vulnerability Scanner**: Container image security scanning
+    - Scans at release time (on tag push) for CRITICAL/HIGH vulnerabilities
+    - Blocks releases if vulnerabilities found
+    - Uploads results to GitHub Security tab
+    - Integrated into `.github/workflows/docker-publish.yml`
+
+- **Docker Security Hardening**
+  - Added `dumb-init` for proper signal handling
+  - Set `NODE_ENV=production`
+  - Added OCI labels for container metadata
+  - Uses `dumb-init` as ENTRYPOINT
+
+- **Runtime Input Validation**
+  - Validates `OVERSEERR_URL` format (http/https)
+  - Validates `OVERSEERR_API_KEY` format (min 20 chars, Base64-compatible with `=` padding)
+  - Fails fast with clear error messages
+  - File: `src/index.ts`
+
 ### Changed
 - **Documentation**: Complete README.md overhaul for clarity and professionalism
   - Reduced from 507 lines to ~280 lines (45% reduction)
@@ -22,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Declared all 4 tools with descriptions for LobeHub detection
   - Should improve "Includes At Least One Tool" score on LobeHub
   - Added transport type declaration
+
+### Security
+- GitHub Advanced Security features now enabled via workflows
+- All security scans report to unified GitHub Security tab
+- Release-time vulnerability blocking prevents publishing vulnerable images
 
 ## [1.2.2] - 2025-11-15
 
