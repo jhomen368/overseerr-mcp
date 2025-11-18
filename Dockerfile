@@ -1,5 +1,5 @@
 # Multi-stage build for Overseerr MCP Server
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -18,7 +18,7 @@ COPY src ./src
 RUN npm run build
 
 # Production stage
-FROM node:22-alpine
+FROM node:25-alpine
 
 # Set working directory
 WORKDIR /app
