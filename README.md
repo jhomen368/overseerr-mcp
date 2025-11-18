@@ -27,9 +27,10 @@
 ## 🔒 Security
 
 - **🤖 Automated Security Scanning**
-  - Dependabot for dependency updates
-  - CodeQL for code vulnerability analysis  
-  - Trivy for Docker image scanning
+  - Dependabot for dependency updates (weekly)
+  - CodeQL for code vulnerability analysis (PR + weekly)
+  - Trivy for Docker image scanning (CI only - blocks PRs if vulnerabilities found)
+  - CI validates everything during PR review, CD trusts CI and publishes
 - **🐳 Hardened Docker Images**
   - Non-root user (mcpuser)
   - Multi-stage builds

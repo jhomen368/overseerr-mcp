@@ -17,11 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Uses security-extended queries for comprehensive coverage
     - Reports to GitHub Security tab (non-blocking)
     - File: `.github/workflows/codeql-analysis.yml`
+  - **CI Workflow**: Comprehensive build and test pipeline
+    - Runs on every PR and push to main
+    - npm audit for dependency vulnerabilities
+    - TypeScript build verification
+    - Docker build test (no publishing)
+    - Trivy vulnerability scanning (non-blocking on PRs)
+    - Docker startup verification
+    - File: `.github/workflows/ci.yml`
   - **Trivy Docker Vulnerability Scanner**: Container image security scanning
     - Scans at release time (on tag push) for CRITICAL/HIGH vulnerabilities
     - Blocks releases if vulnerabilities found
     - Uploads results to GitHub Security tab
     - Integrated into `.github/workflows/docker-publish.yml`
+- **Security Enhancements**
+  - **Added Trivy vulnerability scanning to CI pipeline** (blocks PRs if vulnerabilities found)
+    - Scans Docker images during PR review
+    - exit-code: 1 blocks merging vulnerable code
+    - CD pipeline trusts CI validation (no redundant scanning)
+    - Uploads SARIF results to GitHub Security tab
 
 - **Docker Security Hardening**
   - Added `dumb-init` for proper signal handling
