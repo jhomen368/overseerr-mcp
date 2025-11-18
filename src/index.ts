@@ -130,13 +130,13 @@ function validateApiKey(key: string): { valid: boolean; error?: string } {
     return { valid: false, error: 'OVERSEERR_API_KEY must be a non-empty string' };
   }
   
-  // API keys should be at least 20 characters and alphanumeric (allow Base64 characters including =)
+  // API keys should be at least 20 characters and Base64-compatible
   if (key.length < 20) {
     return { valid: false, error: 'OVERSEERR_API_KEY appears to be too short (expected at least 20 characters)' };
   }
   
-  if (!/^[a-zA-Z0-9\-_=]+$/.test(key)) {
-    return { valid: false, error: 'OVERSEERR_API_KEY contains invalid characters (expected alphanumeric, hyphens, underscores, equals signs)' };
+  if (!/^[a-zA-Z0-9\-_+/=]+$/.test(key)) {
+    return { valid: false, error: 'OVERSEERR_API_KEY contains invalid characters. It should be a Base64-compatible string.' };
   }
   
   return { valid: true };
