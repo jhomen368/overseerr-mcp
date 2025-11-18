@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2025-11-18
+
+### Changed
+- **Documentation**: Complete README.md overhaul for clarity and professionalism
+  - Reduced from 507 lines to ~280 lines (45% reduction)
+  - Added PayPal donate link and LobeHub badge
+  - Added tools quick reference table for easy scanning
+  - Streamlined all sections with better visual hierarchy
+  - Removed redundant version history details
+  - Clear links to CONTRIBUTING.md and CHANGELOG.md for detailed info
+  - Improved troubleshooting section for conciseness
+
+### Added
+- **MCP Metadata**: Added explicit MCP server metadata to package.json
+  - Declared all 4 tools with descriptions for LobeHub detection
+  - Should improve "Includes At Least One Tool" score on LobeHub
+  - Added transport type declaration
+
 ## [1.2.2] - 2025-11-15
 
 ### Fixed

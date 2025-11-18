@@ -1,6 +1,6 @@
 {
   "name": "@jhomen368/overseerr-mcp",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Model Context Protocol (MCP) server for Overseerr - enables AI assistants to search, request, and manage media through your Overseerr instance",
   "type": "module",
   "author": "jhomen368",
@@ -19,6 +19,29 @@
     "ai",
     "assistant"
   ],
+  "mcp": {
+    "server": {
+      "transport": "stdio",
+      "tools": [
+        {
+          "name": "search_media",
+          "description": "Search for movies, TV shows, or people with optional batch dedupe mode for checking multiple titles at once"
+        },
+        {
+          "name": "request_media",
+          "description": "Request movies or TV shows with automatic validation and multi-season confirmation"
+        },
+        {
+          "name": "manage_media_requests",
+          "description": "Manage media requests - list, approve, decline, delete, or get request details"
+        },
+        {
+          "name": "get_media_details",
+          "description": "Get detailed information about movies or TV shows with flexible detail levels"
+        }
+      ]
+    }
+  },
   "bin": {
     "overseerr-mcp": "./build/index.js"
   },

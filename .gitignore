@@ -42,10 +42,9 @@ temp/
 
 # Markdown files (except official docs)
 *.md
-!TEST_PLAN.md
 !README.md
 !CHANGELOG.md
 !CONTRIBUTING.md
 
 # Memory bank (local context management)
-memory-bank/
+.kilocode/rules/memory-bank/

@@ -126,7 +126,7 @@ class OverseerrServer {
     this.server = new Server(
       {
         name: 'overseerr-mcp',
-        version: '1.2.2',
+        version: '1.2.3',
       },
       {
         capabilities: {
@@ -2120,7 +2120,7 @@ class OverseerrServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Overseerr MCP server v1.2.2 running on stdio');
+    console.error('Overseerr MCP server v1.2.3 running on stdio');
   }
 
   async runHttp(port: number = 8085) {
@@ -2130,7 +2130,7 @@ class OverseerrServer {
     const app = express();
 
     app.get('/health', (_req: any, res: any) => {
-      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.2' });
+      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.3' });
     });
 
     app.get('/cache/stats', (_req: any, res: any) => {
@@ -2148,7 +2148,7 @@ class OverseerrServer {
     });
 
     app.listen(port, () => {
-      console.error(`Overseerr MCP server v1.2.2 running on HTTP port ${port}`);
+      console.error(`Overseerr MCP server v1.2.3 running on HTTP port ${port}`);
       console.error(`MCP endpoint: http://localhost:${port}/mcp`);
       console.error(`Health check: http://localhost:${port}/health`);
       console.error(`Cache stats: http://localhost:${port}/cache/stats`);
