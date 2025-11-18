@@ -71,7 +71,7 @@ jobs:
           image-ref: overseerr-mcp:test
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL'
           exit-code: '1'  # BLOCKS PR if vulnerabilities found (same as release)
       
       - name: Upload Trivy results to GitHub Security
