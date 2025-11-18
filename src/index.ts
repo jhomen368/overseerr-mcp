@@ -859,7 +859,6 @@ class OverseerrServer {
               if (altDetails.numberOfSeasons && seasonNumber <= altDetails.numberOfSeasons) {
                 console.error(`[INFO] Found valid alternate: "${alternate.title || alternate.name}" with ${altDetails.numberOfSeasons} seasons`);
                 bestMatch = alternate;
-                details = altDetails;
                 foundValid = true;
                 break;
               }
