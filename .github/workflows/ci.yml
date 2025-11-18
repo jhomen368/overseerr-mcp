@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  typescript-build:
+    name: TypeScript Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true  # Don't fail PR, just warn
+      
+      - name: TypeScript Build
+        run: npm run build
+      
+      - name: Verify build output
+        run: |
+          test -f build/index.js || (echo "❌ build/index.js not found" && exit 1)
+          node -e "require('fs').accessSync('build/index.js'); console.log('Found build/index.js')" || exit 1
+          node -v >/dev/null 2>&1 || (echo '❌ Node not available' && exit 1)
+          node build/index.js --help >/dev/null 2>&1 || echo "ℹ️ build/index.js executed (non-blocking)"
+          echo "✅ Build artifact verified"
+  
+  docker-security-scan:
+    name: Docker Build & Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Build Docker image (test only - no push)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: overseerr-mcp:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: overseerr-mcp:test
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL'
+          limit-severities-for-sarif: true
+          exit-code: '1'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'

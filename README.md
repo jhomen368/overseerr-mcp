@@ -1,430 +1,73 @@
 # Overseerr MCP Server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP Badge](https://lobehub.com/badge/mcp/jhomen368-overseerr-mcp)](https://lobehub.com/mcp/jhomen368-overseerr-mcp)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/overseerr-mcp/pkgs/container/overseerr-mcp)
-[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
+[![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://github.com/jhomen368/overseerr-mcp)
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that provides AI assistants with direct integration to [Overseerr](https://overseerr.dev/), enabling automated media discovery, requests, and management for your Plex ecosystem.
+> **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server providing AI assistants with direct integration to [Overseerr](https://overseerr.dev/) for automated media discovery, requests, and management in your Plex ecosystem.**
 
-## What's New in v1.2.2 🚀
+## ✨ What's New in v1.2.3
+- **Enhanced Security Features**
+  - Added automated security workflows (Dependabot, CodeQL, Trivy)
+  - Docker image hardening with non-root user and minimal base image
+  - Input validation for URLs and API keys
+- See [CHANGELOG.md](CHANGELOG.md) for full version history
 
-### Bug Fixes
-- **Season 0 (Specials) Exclusion** - Fixed `seasons: "all"` automatically requesting season 0
-  - Season 0 (specials) is now excluded when using `seasons: "all"`
-  - To request specials, explicitly include 0 in array: `seasons: [0, 1, 2]`
-  - Prevents unwanted specials downloads for batch requests
+## 🎯 Key Features
 
-## What's New in v1.2.1 🚀
+- **🚀 99% fewer API calls** for batch operations (150-300 → 1)
+- **⚡ 88% token reduction** with compact response formats  
+- **🎯 Batch Dedupe Mode** - Check 50-100 titles in one operation
+- **🔄 Smart Caching** - 70-85% API call reduction
+- **🛡️ Safety Features** - Multi-season confirmation, validation
+- **📦 4 Powerful Tools** - Consolidated from 8 for clarity
 
-### Bug Fixes
-- **TV Seasons Validation** - Fixed HTTP 500 errors when requesting TV shows without seasons parameter
-  - TV show requests now require `seasons` parameter (array or "all")
-  - Clear error messages guide proper usage
-  - Auto-request workflow defaults to 'all' seasons when not specified
+## 🔒 Security
 
-### From v1.1.0
+- **🤖 Automated Security Scanning**
+  - Dependabot for dependency updates (weekly)
+  - CodeQL for code vulnerability analysis (PR + weekly)
+  - Trivy for Docker image scanning (CI only - blocks PRs if vulnerabilities found)
+  - CI validates everything during PR review, CD trusts CI and publishes
+- **🐳 Hardened Docker Images**
+  - Non-root user (mcpuser)
+  - Multi-stage builds
+  - Minimal Alpine base
+  - dumb-init process management
+- **✅ Input Validation**
+  - URL and API key format validation
+  - Fails fast with clear error messages
 
-#### Major Performance Improvements
-- **99% fewer API calls** for batch operations (150-300 → 1)
-- **88% token reduction** with compact response formats
-- **90% faster** execution (2-3 min → 10-15 sec)
-- **4 consolidated tools** (down from 8) for clearer AI understanding
+## 🛠️ Available Tools
 
-#### Key Features
-- 🎯 **Batch Dedupe Mode** - Check 50-100 titles in one call (perfect for anime season workflows)
-- 🔄 **Smart Caching** - 70-85% API call reduction with configurable TTLs
-- 🛡️ **Smart Confirmation** - Episode threshold (>24 episodes) for TV shows prevents accidental bulk downloads
-- ⚡ **Built-in Retry Logic** - Exponential backoff for reliability
-- 🎨 **Compact Formats** - Token-efficient responses by default
+| Tool | Purpose | Key Features |
+|------|---------|--------------|
+| **search_media** | Search & dedupe | Single/batch search, dedupe mode for 50-100 titles, franchise awareness |
+| **request_media** | Request movies/TV | Batch requests, season validation, multi-season confirmation, dry-run mode |
+| **manage_media_requests** | Manage requests | List/approve/decline/delete, filtering, summary statistics |
+| **get_media_details** | Get media info | Batch lookup, flexible detail levels (basic/standard/full) |
 
-#### All Bug Fixes
-- Improved media type detection (95%+ accuracy)
-- Fixed special character handling (apostrophes, exclamation marks)
-- Fixed season 0 exclusion in availability checks
-- Fixed data consistency for NOT_FOUND results
-- Fixed invalid season number validation
-- Fixed NOT_FOUND status consistency
-- Fixed TV seasons parameter requirement
+## 📋 Prerequisites
 
-## What is MCP?
+- **Node.js** 18.0 or higher
+- **Overseerr instance** (self-hosted or managed)
+- **Overseerr API key** (Settings → General in Overseerr)
 
-The Model Context Protocol (MCP) is an open protocol that enables seamless integration between AI applications and external data sources. This server implements MCP to give AI assistants like Claude the ability to interact with your Overseerr instance.
+## 🚀 Quick Start
 
-## Features
-
-This server provides 4 powerful, consolidated tools for interacting with your Overseerr instance:
-
-### Available Tools
-
-#### 1. **search_media** - Unified Search & Dedupe
-Search for media with optional batch dedupe mode optimized for workflows that check many titles at once.
-
-**Modes**:
-- **Single search**: Find movies/TV shows/people
-- **Batch search**: Multiple queries in one call
-- **Dedupe mode**: Check 50-100 titles for request status (99% fewer API calls!)
-
-**Example - Batch Dedupe (Anime Workflow)**:
-```typescript
-search_media({
-  dedupeMode: true,
-  titles: [
-    "Frieren: Beyond Journey's End",
-    "My Hero Academia Season 7",
-    "Demon Slayer Season 4",
-    // ... 47 more  titles
-  ],
-  autoNormalize: true  // Strips "Season N", "Part N", etc.
-})
-```
-
-**Response**:
-```json
-{
-  "summary": {
-    "total": 50,
-    "pass": 35,
-    "blocked": 15,
-    "passRate": "70%"
-  },
-  "results": [
-    {
-      "title": "Frieren: Beyond Journey's End",
-      "id": 209867,
-      "status": "pass"
-    },
-    {
-      "title": "My Hero Academia Season 7",
-      "id": 155688,
-      "status": "pass",
-      "franchiseInfo": "Base series: S1-S6 in library"
-    },
-    {
-      "title": "Demon Slayer Season 4",
-      "id": 196556,
-      "status": "blocked",
-      "reason": "Season already requested (APPROVED)"
-    }
-  ]
-}
-```
-
----
-
-#### 2. **request_media** - Smart Media Requests
-Request movies or TV shows with automatic validation and multi-season confirmation.
-
-**Features**:
-- Single or batch requests
-- **TV shows require `seasons` parameter** (array of season numbers or "all")
-- Multi-season confirmation when total episodes >24
-- Pre-request validation (checks if already requested/available)
-- Dry-run mode (preview without requesting)
-
-**Example - Single Movie Request**:
-```typescript
-request_media({
-  mediaType: "movie",
-  mediaId: 438631
-})
-```
-
-**Example - TV Show Request**:
-```typescript
-request_media({
-  mediaType: "tv",
-  mediaId: 82856,
-  seasons: [1, 2]
-})
-```
-
-**Example - Multi-Season Confirmation (>24 episodes)**:
-```typescript
-request_media({
-  mediaType: "tv",
-  mediaId: 82856,
-  seasons: "all"
-})
-
-// If total episodes > 24, returns:
-{
-  "requiresConfirmation": true,
-  "media": {
-    "title": "The Bear",
-    "totalSeasons": 3,
-    "totalEpisodes": 28,
-    "threshold": 24
-  },
-  "message": "This will request 3 season(s) with 28 episodes. Add 'confirmed: true' to proceed."
-}
-
-// Then confirm:
-request_media({
-  mediaType: "tv",
-  mediaId: 82856,
-  seasons: "all",
-  confirmed: true
-})
-```
-
-**Example - Batch Requests**:
-```typescript
-request_media({
-  items: [
-    { mediaType: "movie", mediaId: 438631 },
-    { mediaType: "tv", mediaId: 209867, seasons: "all" }
-  ]
-})
-```
-
----
-
-#### 3. **manage_media_requests** - All Request Management
-Unified tool for all request management operations.
-
-**Actions**: get, list, approve, decline, delete
-
-**Example - List with Summary**:
-```typescript
-manage_media_requests({
-  action: "list",
-  summary: true
-})
-
-// Returns statistics instead of full list:
-{
-  "total": 57,
-  "statusBreakdown": {
-    "PENDING_APPROVAL": 12,
-    "APPROVED": 8,
-    "AVAILABLE": 30
-  }
-}
-```
-
-**Example - Batch Approve**:
-```typescript
-manage_media_requests({
-  action: "approve",
-  requestIds: [123, 124, 125]
-})
-```
-
-**Example - List with Filters**:
-```typescript
-manage_media_requests({
-  action: "list",
-  filter: "pending",
-  take: 20
-})
-```
-
----
-
-#### 4. **get_media_details** - Flexible Detail Lookup
-Get detailed information with level control and batch support.
-
-**Levels**:
-- **basic**: Essential info only (id, title, year, rating)
-- **standard**: + overview, genres, runtime, seasons
-- **full**: Complete API response
-
-**Example - Single Lookup**:
-```typescript
-get_media_details({
-  mediaType: "movie",
-  mediaId: 438631,
-  level: "basic"
-})
-```
-
-**Example - Batch Lookup**:
-```typescript
-get_media_details({
-  items: [
-    { mediaType: "movie", mediaId: 438631 },
-    { mediaType: "tv", mediaId: 82856 }
-  ]
-})
-```
-
-## Prerequisites
-
-- Node.js 18.0 or higher
-- An Overseerr instance (self-hosted or managed)
-- Overseerr API key (Settings → General in your Overseerr instance)
-
-## Configuration
-
-### Local Development (stdio mode)
-
-Configure the server with environment variables:
-
-- `OVERSEERR_URL`: Your Overseerr instance URL (e.g., https://overseerr.example.com)
-- `OVERSEERR_API_KEY`: Your API key from Overseerr Settings → General
-
-### Docker/HTTP Mode (Streamable HTTP with SSE)
-
-When running in Docker, HTTP transport with Server-Sent Events (SSE) is enabled by default. The following environment variables are **required**:
-
-- `OVERSEERR_URL`: Your Overseerr instance URL
-- `OVERSEERR_API_KEY`: Your Overseerr API key
-
-The Docker image has these defaults (no need to override unless you want to change them):
-- `HTTP_MODE`: `true` (HTTP transport enabled)
-- `PORT`: `8085` (MCP server port)
-
-## Installation
-
-### NPM Installation
+### Option 1: NPM (Recommended)
 
 ```bash
 npm install -g @jhomen368/overseerr-mcp
 ```
 
-### From Source
+**Configure with Claude Desktop:**
 
-```bash
-git clone https://github.com/jhomen368/overseerr-mcp.git
-cd overseerr-mcp
-npm install
-npm run build
-```
-
-### Docker Build
-
-Build the Docker image locally:
-
-```bash
-docker build -t overseerr-mcp .
-```
-
-Or pull from GitHub Container Registry:
-
-```bash
-docker pull ghcr.io/jhomen368/overseerr-mcp:latest
-```
-
-## Docker Usage
-
-### Running with Docker
-
-#### Basic Docker Run
-
-```bash
-docker run -d \
-  --name overseerr-mcp \
-  -p 8085:8085 \
-  -e OVERSEERR_URL=https://your-overseerr-instance.com \
-  -e OVERSEERR_API_KEY=your-api-key-here \
-  ghcr.io/jhomen368/overseerr-mcp:latest
-```
-
-#### Using Environment File
-
-Create a `.env` file:
-
-```env
-OVERSEERR_URL=https://your-overseerr-instance.com
-OVERSEERR_API_KEY=your-api-key-here
-```
-
-Then run:
-
-```bash
-docker run -d \
-  --name overseerr-mcp \
-  -p 8085:8085 \
-  --env-file .env \
-  ghcr.io/jhomen368/overseerr-mcp:latest
-```
-
-### Using Docker Compose
-
-Create a `docker-compose.yml` file:
-
-```yaml
-version: '3.8'
-
-services:
-  overseerr-mcp:
-    image: ghcr.io/jhomen368/overseerr-mcp:latest
-    container_name: overseerr-mcp
-    ports:
-      - "8085:8085"
-    environment:
-      - OVERSEERR_URL=https://your-overseerr-instance.com
-      - OVERSEERR_API_KEY=your-api-key-here
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8085/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-```
-
-Start the service:
-
-```bash
-docker-compose up -d
-```
-
-### HTTP Endpoints
-
-When running in HTTP mode with streamable transport, the server exposes:
-
-#### `POST /mcp`
-The main MCP endpoint using Server-Sent Events for streaming communication. This is the endpoint you'll configure in your MCP client to connect to the server.
-
-#### `GET /health`
-Health check endpoint that returns server status:
-
-```bash
-curl http://localhost:8085/health
-```
-
-Response:
-```json
-{
-  "status": "ok",
-  "service": "overseerr-mcp"
-}
-```
-
-### Verifying the Server
-
-Check if the server is running:
-
-```bash
-# Check health endpoint
-curl http://localhost:8085/health
-
-# Check container logs
-docker logs overseerr-mcp
-
-# Check container status
-docker ps | grep overseerr-mcp
-```
-
-### Connecting MCP Clients
-
-To connect an MCP client to the HTTP server, configure it with:
-
-- **Transport**: Streamable HTTP (via SSE)
-- **URL**: `http://localhost:8085/mcp` (or your server's address)
-- **Method**: POST
-
-The server uses Server-Sent Events (SSE) as the underlying mechanism for streamable HTTP transport, enabling efficient bidirectional communication.
-
-## Configuring with MCP Clients
-
-### Claude Desktop
-
-Add to your Claude Desktop configuration file:
-
-**MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+Add to your configuration file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -441,67 +84,214 @@ Add to your Claude Desktop configuration file:
 }
 ```
 
-### Other MCP Clients
+### Option 2: Docker (Remote Access)
 
-For clients supporting streamable HTTP transport, configure with:
+```bash
+docker run -d \
+  --name overseerr-mcp \
+  -p 8085:8085 \
+  -e OVERSEERR_URL=https://your-overseerr-instance.com \
+  -e OVERSEERR_API_KEY=your-api-key-here \
+  ghcr.io/jhomen368/overseerr-mcp:latest
+```
 
-- **URL**: `http://localhost:8085/mcp`
+**Docker Compose:**
+
+```yaml
+services:
+  overseerr-mcp:
+    image: ghcr.io/jhomen368/overseerr-mcp:latest
+    container_name: overseerr-mcp
+    ports:
+      - "8085:8085"
+    environment:
+      - OVERSEERR_URL=https://your-overseerr-instance.com
+      - OVERSEERR_API_KEY=your-api-key-here
+    restart: unless-stopped
+```
+
+**Test the server:**
+```bash
+curl http://localhost:8085/health
+```
+
+**Connect MCP clients:**
 - **Transport**: Streamable HTTP (SSE)
-- **Method**: POST
+- **URL**: `http://localhost:8085/mcp`
 
-Then start the server in HTTP mode using Docker (see Docker Usage section).
+### Option 3: From Source
 
-## Usage Examples
+```bash
+git clone https://github.com/jhomen368/overseerr-mcp.git
+cd overseerr-mcp
+npm install
+npm run build
+node build/index.js
+```
 
-Once configured, you can ask your AI assistant to:
+## 💡 Usage Examples
 
-- "Search for the movie Inception in Overseerr"
-- "Check if The Matrix has already been requested"
-- "Has anyone requested Breaking Bad yet?"
-- "Request the TV show Breaking Bad season 1"
+### Batch Dedupe Workflow (Perfect for Anime Seasons)
+
+```typescript
+// Check 50-100 titles in ONE API call
+search_media({
+  dedupeMode: true,
+  titles: [
+    "Frieren: Beyond Journey's End",
+    "My Hero Academia Season 7",
+    "Demon Slayer Season 4",
+    // ... 47 more titles
+  ],
+  autoNormalize: true  // Strips "Season N", "Part N", etc.
+})
+```
+
+**Response:**
+```json
+{
+  "summary": {
+    "total": 50,
+    "pass": 35,
+    "blocked": 15,
+    "passRate": "70%"
+  },
+  "results": [
+    { "title": "Frieren", "status": "pass", "id": 209867 },
+    { "title": "My Hero Academia S7", "status": "pass", "franchiseInfo": "S1-S6 in library" },
+    { "title": "Demon Slayer S4", "status": "blocked", "reason": "Already requested" }
+  ]
+}
+```
+
+### Request Media with Validation
+
+```typescript
+// Single movie request
+request_media({
+  mediaType: "movie",
+  mediaId: 438631
+})
+
+// TV show with specific seasons
+request_media({
+  mediaType: "tv",
+  mediaId: 82856,
+  seasons: [1, 2]
+})
+
+// All seasons (excludes season 0 by default)
+request_media({
+  mediaType: "tv",
+  mediaId: 82856,
+  seasons: "all"
+})
+```
+
+### Manage Requests
+
+```typescript
+// List with filters
+manage_media_requests({
+  action: "list",
+  filter: "pending",
+  take: 20
+})
+
+// Batch approve
+manage_media_requests({
+  action: "approve",
+  requestIds: [123, 124, 125]
+})
+
+// Get summary statistics
+manage_media_requests({
+  action: "list",
+  summary: true
+})
+```
+
+### Natural Language Examples
+
+Simply ask your AI assistant:
+
+- "Search for Inception in Overseerr"
+- "Check if these 50 anime titles have been requested"
 - "Request Breaking Bad all seasons"
-- "List all pending media requests"
-- "Show me all available media in the library"
-- "Get details for request ID 123"
-- "Approve request ID 45"
-- "Show me information about the movie with TMDB ID 550"
-- "What's the status of my request for Dune?"
+- "Show me all pending media requests"
+- "Approve request ID 123"
+- "Get details for TMDB ID 550"
 
-## API Reference
+## ⚙️ Configuration
 
-The server uses the Overseerr API v1. For more details, see:
-- [Overseerr API Documentation](https://api-docs.overseerr.dev/)
+### Environment Variables
 
-## Contributing
+**Required:**
+- `OVERSEERR_URL` - Your Overseerr instance URL
+- `OVERSEERR_API_KEY` - API key from Overseerr Settings → General
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+**Optional (with defaults):**
+```bash
+CACHE_ENABLED=true                   # Enable caching
+CACHE_SEARCH_TTL=300000             # Search cache: 5 min
+CACHE_MEDIA_TTL=1800000             # Media cache: 30 min
+CACHE_REQUESTS_TTL=60000            # Request cache: 1 min
+CACHE_MAX_SIZE=1000                 # Max cache entries
+REQUIRE_MULTI_SEASON_CONFIRM=true   # Confirm >24 episodes
+HTTP_MODE=false                      # Enable HTTP transport
+PORT=8085                            # HTTP server port
+```
 
-## Troubleshooting
+## 📚 Documentation
+
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and release notes
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
+- **[Overseerr API Docs](https://api-docs.overseerr.dev/)** - Official API reference
+
+## 🔧 Troubleshooting
 
 ### Connection Issues
-
-1. Verify your Overseerr URL is accessible from where the server runs
-2. Ensure your API key is valid (Overseerr Settings → General)
-3. Check firewall rules if running remotely
+- Verify Overseerr URL is accessible
+- Check API key validity (Settings → General)
+- Review firewall rules for remote access
 
 ### Docker Issues
+```bash
+# Check logs
+docker logs overseerr-mcp
 
-1. Verify environment variables are set correctly
-2. Check container logs: `docker logs overseerr-mcp`
-3. Ensure port 8085 is not already in use
+# Verify health
+curl http://localhost:8085/health
+
+# Restart container
+docker restart overseerr-mcp
+```
 
 ### Build Issues
+```bash
+# Ensure Node.js 18+
+node --version
 
-1. Ensure Node.js version is 18.0 or higher
-2. Clear node_modules and reinstall: `rm -rf node_modules && npm install`
-3. Rebuild TypeScript: `npm run build`
+# Clean rebuild
+rm -rf node_modules build
+npm install
+npm run build
+```
 
-## License
+## 🤝 Contributing
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## Acknowledgments
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details
+
+## 🙏 Acknowledgments
 
 - [Overseerr](https://overseerr.dev/) - Media request and discovery tool
 - [Model Context Protocol](https://modelcontextprotocol.io) - Open protocol for AI integrations
 - [Anthropic](https://www.anthropic.com/) - Creators of the MCP standard
+
+---
+
+**Support this project:** [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)

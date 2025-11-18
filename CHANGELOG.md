@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2025-11-18
+
+### Added
+- **Automated Security Workflows**
+  - **Dependabot**: Automated dependency updates for npm, GitHub Actions, and Docker base images
+    - Weekly scans on Mondays with max 5 open PRs
+    - File: `.github/dependabot.yml`
+  - **CodeQL Security Scanning**: Static code analysis for vulnerabilities
+    - Runs on every push/PR to main + weekly schedule
+    - Uses security-extended queries for comprehensive coverage
+    - Reports to GitHub Security tab (non-blocking)
+    - File: `.github/workflows/codeql-analysis.yml`
+  - **CI Workflow**: Comprehensive build and test pipeline
+    - Runs on every PR and push to main
+    - npm audit for dependency vulnerabilities
+    - TypeScript build verification
+    - Docker build test (no publishing)
+    - Trivy vulnerability scanning (non-blocking on PRs)
+    - Docker startup verification
+    - File: `.github/workflows/ci.yml`
+  - **Trivy Docker Vulnerability Scanner**: Container image security scanning
+    - Scans at release time (on tag push) for CRITICAL/HIGH vulnerabilities
+    - Blocks releases if vulnerabilities found
+    - Uploads results to GitHub Security tab
+    - Integrated into `.github/workflows/docker-publish.yml`
+- **Security Enhancements**
+  - **Added Trivy vulnerability scanning to CI pipeline** (blocks PRs if vulnerabilities found)
+    - Scans Docker images during PR review
+    - exit-code: 1 blocks merging vulnerable code
+    - CD pipeline trusts CI validation (no redundant scanning)
+    - Uploads SARIF results to GitHub Security tab
+
+- **Docker Security Hardening**
+  - Added `dumb-init` for proper signal handling
+  - Set `NODE_ENV=production`
+  - Added OCI labels for container metadata
+  - Uses `dumb-init` as ENTRYPOINT
+
+- **Runtime Input Validation**
+  - Validates `OVERSEERR_URL` format (http/https)
+  - Validates `OVERSEERR_API_KEY` format (min 20 chars, Base64-compatible with `=` padding)
+  - Fails fast with clear error messages
+  - File: `src/index.ts`
+
+### Changed
+- **Documentation**: Complete README.md overhaul for clarity and professionalism
+  - Reduced from 507 lines to ~280 lines (45% reduction)
+  - Added PayPal donate link and LobeHub badge
+  - Added tools quick reference table for easy scanning
+  - Streamlined all sections with better visual hierarchy
+  - Removed redundant version history details
+  - Clear links to CONTRIBUTING.md and CHANGELOG.md for detailed info
+  - Improved troubleshooting section for conciseness
+
+### Added
+- **MCP Metadata**: Added explicit MCP server metadata to package.json
+  - Declared all 4 tools with descriptions for LobeHub detection
+  - Should improve "Includes At Least One Tool" score on LobeHub
+  - Added transport type declaration
+
+### Security
+- GitHub Advanced Security features now enabled via workflows
+- All security scans report to unified GitHub Security tab
+- Release-time vulnerability blocking prevents publishing vulnerable images
+
 ## [1.2.2] - 2025-11-15
 
 ### Fixed

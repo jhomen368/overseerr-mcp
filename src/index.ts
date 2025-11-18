@@ -103,9 +103,43 @@ function enrichSeasons(details: MediaDetails): DedupeDetails['seasons'] {
       seasonNumber: season.seasonNumber,
       episodeCount: season.episodeCount,
       airDate: season.airDate,
-      status,
+      status
     };
   });
+}
+
+// Validation functions
+function validateOverseerrUrl(url: string): { valid: boolean; error?: string } {
+  if (!url || typeof url !== 'string') {
+    return { valid: false, error: 'OVERSEERR_URL must be a non-empty string' };
+  }
+  
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, error: 'OVERSEERR_URL must use http:// or https:// protocol' };
+    }
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: 'OVERSEERR_URL must be a valid URL (e.g., https://overseerr.example.com)' };
+  }
+}
+
+function validateApiKey(key: string): { valid: boolean; error?: string } {
+  if (!key || typeof key !== 'string') {
+    return { valid: false, error: 'OVERSEERR_API_KEY must be a non-empty string' };
+  }
+  
+  // API keys should be at least 20 characters and Base64-compatible
+  if (key.length < 20) {
+    return { valid: false, error: 'OVERSEERR_API_KEY appears to be too short (expected at least 20 characters)' };
+  }
+  
+  if (!/^[a-zA-Z0-9\-_+/=]+$/.test(key)) {
+    return { valid: false, error: 'OVERSEERR_API_KEY contains invalid characters. It should be a Base64-compatible string.' };
+  }
+  
+  return { valid: true };
 }
 
 const OVERSEERR_URL = process.env.OVERSEERR_URL;
@@ -117,6 +151,18 @@ if (!OVERSEERR_URL || !OVERSEERR_API_KEY) {
   );
 }
 
+// Validate URL format
+const urlValidation = validateOverseerrUrl(OVERSEERR_URL);
+if (!urlValidation.valid) {
+  throw new Error(`Invalid OVERSEERR_URL: ${urlValidation.error}`);
+}
+
+// Validate API key format
+const keyValidation = validateApiKey(OVERSEERR_API_KEY);
+if (!keyValidation.valid) {
+  throw new Error(`Invalid OVERSEERR_API_KEY: ${keyValidation.error}`);
+}
+
 class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
@@ -126,7 +172,7 @@ class OverseerrServer {
     this.server = new Server(
       {
         name: 'overseerr-mcp',
-        version: '1.2.2',
+        version: '1.2.3',
       },
       {
         capabilities: {
@@ -1000,7 +1046,7 @@ class OverseerrServer {
                 id: bestMatch.id,
                 mediaType: 'tv',
                 status: 'blocked' as const,
-                reason: `All regular seasons already in library`,
+                reason: `All regular seasons already in library (${availableSeasons.join(', ')})`,
                 reasonCode: 'ALREADY_AVAILABLE',
                 isActionable: false,
                 franchiseInfo: `${details.name || bestMatch.name} - All ${availableSeasons.length} seasons in library (S${availableSeasons.join(', S')})`,
@@ -1027,7 +1073,7 @@ class OverseerrServer {
                 id: bestMatch.id,
                 mediaType: 'tv',
                 status: 'blocked' as const,
-                reason: `All regular seasons already requested`,
+                reason: `All regular seasons already requested (${requestedSeasons.join(', ')})`,
                 reasonCode: 'ALREADY_REQUESTED',
                 isActionable: false,
                 franchiseInfo: `${details.name || bestMatch.name} - All ${requestedSeasons.length} seasons requested (S${requestedSeasons.join(', S')})`,
@@ -2120,7 +2166,7 @@ class OverseerrServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Overseerr MCP server v1.2.2 running on stdio');
+    console.error('Overseerr MCP server v1.2.3 running on stdio');
   }
 
   async runHttp(port: number = 8085) {
@@ -2130,7 +2176,7 @@ class OverseerrServer {
     const app = express();
 
     app.get('/health', (_req: any, res: any) => {
-      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.2' });
+      res.json({ status: 'ok', service: 'overseerr-mcp', version: '1.2.3' });
     });
 
     app.get('/cache/stats', (_req: any, res: any) => {
@@ -2148,7 +2194,7 @@ class OverseerrServer {
     });
 
     app.listen(port, () => {
-      console.error(`Overseerr MCP server v1.2.2 running on HTTP port ${port}`);
+      console.error(`Overseerr MCP server v1.2.3 running on HTTP port ${port}`);
       console.error(`MCP endpoint: http://localhost:${port}/mcp`);
       console.error(`Health check: http://localhost:${port}/health`);
       console.error(`Cache stats: http://localhost:${port}/cache/stats`);
