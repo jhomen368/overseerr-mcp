@@ -2323,6 +2323,7 @@ class OverseerrServer {
     app.post('/mcp', async (req: any, res: any) => {
       console.error('New MCP connection established');
       const transport = new SSEServerTransport('/message', res);
+      await this.server.close();
       await this.server.connect(transport);
 
       req.on('close', () => {
