@@ -1570,9 +1570,29 @@ class OverseerrServer {
         if (expandedSeasons.length === 0 && details.numberOfSeasons) {
           expandedSeasons = Array.from({ length: details.numberOfSeasons }, (_, i) => i + 1);
         }
-      } else {
+      } else if (Array.isArray(seasons)) {
         // Already an array, use as-is
-        expandedSeasons = seasons as number[];
+        expandedSeasons = seasons;
+      } else {
+        // seasons might be a string representation of an array or some other unexpected type
+        // TypeScript narrows to never here, but at runtime MCP clients may pass unexpected types
+        const seasonsAny = seasons as any;
+        
+        if (typeof seasonsAny === 'string' && seasonsAny.startsWith('[') && seasonsAny.endsWith(']')) {
+          // Handle case where seasons is passed as a string representation of an array
+          try {
+            const parsed = JSON.parse(seasonsAny);
+            if (Array.isArray(parsed)) {
+              expandedSeasons = parsed;
+            } else {
+              expandedSeasons = [];
+            }
+          } catch (e) {
+            expandedSeasons = [];
+          }
+        } else {
+          expandedSeasons = [];
+        }
       }
     }
 

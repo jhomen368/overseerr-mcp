@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-03-25
+
+### Fixed
+- **HTTP/SSE reconnection stability**: Fixed "Error: Already connected to a transport" crash when an MCP client reconnects after disconnecting in HTTP mode
+  - Added single-client enforcement: returns HTTP 409 Conflict with `Retry-After` header if a client is already connected
+  - Properly cleans up server state when a client disconnects via `req.on('close')`
+  - Resets connection flag on failed connection attempts to prevent permanent lockout
+  - Prevents race condition by setting the connection flag before the async `connect()` call
+- **`request_media` seasons array handling**: Fixed "seasonsToRequest.forEach is not a function" crash when calling `request_media` with an explicit seasons array (e.g. `seasons: [1, 2]`) — the MCP SDK can deliver array parameters in non-standard formats; added runtime type checking to normalize them correctly before processing
+
+---
+
 ## [2.1.0] - 2026-03-16
 
 ### Added
