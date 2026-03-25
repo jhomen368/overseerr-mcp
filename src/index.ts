@@ -188,6 +188,7 @@ class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
   private cache: CacheManager;
+  private activeSseConnection: boolean = false;
 
   constructor() {
     this.server = new Server(
@@ -2321,12 +2322,33 @@ class OverseerrServer {
     });
 
     app.post('/mcp', async (req: any, res: any) => {
-      console.error('New MCP connection established');
-      const transport = new SSEServerTransport('/message', res);
-      await this.server.connect(transport);
+      // Single-client enforcement: reject if another client is already connected
+      if (this.activeSseConnection) {
+        res.status(409).set('Retry-After', '5').json({
+          error: 'Another MCP client is already connected. Disconnect the existing client first.'
+        });
+        return;
+      }
+
+      // Set flag BEFORE the async connect to prevent any race at the await point
+      this.activeSseConnection = true;
+
+      try {
+        console.error('New MCP connection established');
+        const transport = new SSEServerTransport('/message', res);
+        await this.server.connect(transport);
+      } catch (error) {
+        this.activeSseConnection = false;  // Reset on failure so future connections aren't permanently blocked
+        console.error('[MCP] Connection error:', error);
+        throw error;
+      }
 
       req.on('close', () => {
-        console.error('MCP connection closed');
+        console.log('MCP connection closed');
+        this.activeSseConnection = false;
+        this.server.close().catch(err => {
+          console.error('[MCP] Error closing server on disconnect:', err);
+        });
       });
     });
 
