@@ -2332,31 +2332,18 @@ class OverseerrServer {
 
       // Set flag BEFORE the async connect to prevent any race at the await point
       this.activeSseConnection = true;
-      let staleConnectionTimer: ReturnType<typeof setTimeout> | null = null;
 
       try {
         console.error('New MCP connection established');
         const transport = new SSEServerTransport('/message', res);
         await this.server.connect(transport);
-
-        // Guard against stale connections (e.g. network partition where req.on('close') never fires)
-        staleConnectionTimer = setTimeout(() => {
-          console.warn('[MCP] Stale connection timeout - resetting connection state');
-          this.activeSseConnection = false;
-          this.server.close().catch(() => {});
-        }, 600000); // 10 minutes
       } catch (error) {
-        if (staleConnectionTimer) clearTimeout(staleConnectionTimer);
         this.activeSseConnection = false;  // Reset on failure so future connections aren't permanently blocked
         console.error('[MCP] Connection error:', error);
         throw error;
       }
 
       req.on('close', () => {
-        if (staleConnectionTimer) {
-          clearTimeout(staleConnectionTimer);
-          staleConnectionTimer = null;
-        }
         console.log('MCP connection closed');
         this.activeSseConnection = false;
         this.server.close().catch(err => {
