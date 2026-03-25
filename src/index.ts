@@ -188,6 +188,7 @@ class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
   private cache: CacheManager;
+  private activeSseConnection: boolean = false;
 
   constructor() {
     this.server = new Server(
@@ -2321,12 +2322,46 @@ class OverseerrServer {
     });
 
     app.post('/mcp', async (req: any, res: any) => {
-      console.error('New MCP connection established');
-      const transport = new SSEServerTransport('/message', res);
-      await this.server.connect(transport);
+      // Single-client enforcement: reject if another client is already connected
+      if (this.activeSseConnection) {
+        res.status(409).set('Retry-After', '5').json({
+          error: 'Another MCP client is already connected. Disconnect the existing client first.'
+        });
+        return;
+      }
+
+      // Set flag BEFORE the async connect to prevent any race at the await point
+      this.activeSseConnection = true;
+      let staleConnectionTimer: ReturnType<typeof setTimeout> | null = null;
+
+      try {
+        console.error('New MCP connection established');
+        const transport = new SSEServerTransport('/message', res);
+        await this.server.connect(transport);
+
+        // Guard against stale connections (e.g. network partition where req.on('close') never fires)
+        staleConnectionTimer = setTimeout(() => {
+          console.warn('[MCP] Stale connection timeout - resetting connection state');
+          this.activeSseConnection = false;
+          this.server.close().catch(() => {});
+        }, 600000); // 10 minutes
+      } catch (error) {
+        if (staleConnectionTimer) clearTimeout(staleConnectionTimer);
+        this.activeSseConnection = false;  // Reset on failure so future connections aren't permanently blocked
+        console.error('[MCP] Connection error:', error);
+        throw error;
+      }
 
       req.on('close', () => {
-        console.error('MCP connection closed');
+        if (staleConnectionTimer) {
+          clearTimeout(staleConnectionTimer);
+          staleConnectionTimer = null;
+        }
+        console.log('MCP connection closed');
+        this.activeSseConnection = false;
+        this.server.close().catch(err => {
+          console.error('[MCP] Error closing server on disconnect:', err);
+        });
       });
     });
 
