@@ -334,3 +334,8 @@ MIT License - see [LICENSE](LICENSE) for details
 ---
 
 **Support this project:** [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
+
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/jhomen368-overseerr-mcp).
+
