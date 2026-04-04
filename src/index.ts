@@ -1702,7 +1702,7 @@ class OverseerrServer {
 
     // Get media title with caching
     const detailsCacheKey = { mediaType, mediaId };
-    let mediaTitle = 'Unknown Media';
+    let mediaTitle;
 
     let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
     if (!details) {
