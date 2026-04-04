@@ -1525,6 +1525,21 @@ class OverseerrServer {
     };
   }
 
+  private async getMediaDetails(mediaType: string, mediaId: number): Promise<MediaDetails> {
+    const cacheKey = { mediaType, mediaId };
+    let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
+
+    if (!details) {
+      const response = await withRetry(async () => {
+        return await this.axiosInstance.get<MediaDetails>(`/${mediaType}/${mediaId}`);
+      });
+      details = response.data;
+      this.cache.set('mediaDetails', cacheKey, details);
+    }
+
+    return details;
+  }
+
   private async handleRequestMedia(args: any) {
     const requestArgs = args as RequestMediaArgs;
 
@@ -1559,8 +1574,7 @@ class OverseerrServer {
     let expandedSeasons: number[] | undefined = undefined;
     if (mediaType === 'tv' && seasons) {
       if (seasons === 'all') {
-        const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
-        const details = response.data;
+        const details = await this.getMediaDetails(mediaType, mediaId!);
         
         // Get all regular seasons (exclude season 0 - specials)
         const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
@@ -1653,8 +1667,7 @@ class OverseerrServer {
       
       if (requireConfirm) {
         // Get details to calculate episode count
-        const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
-        const details = response.data;
+        const details = await this.getMediaDetails(mediaType, mediaId!);
 
         const totalSeasons = details.numberOfSeasons || 0;
         const seasonsToRequest = expandedSeasons;
@@ -1700,13 +1713,13 @@ class OverseerrServer {
       }
     }
 
+    // Get media title with caching
+    const details = await this.getMediaDetails(mediaType!, mediaId!);
+    let mediaTitle: string;
+    mediaTitle = details.title ?? details.name ?? 'Unknown Media';
+
     // Dry run - don't actually request
     if (dryRun) {
-      const response = await this.axiosInstance.get<MediaDetails>(
-        `/${mediaType}/${mediaId}`
-      );
-      const details = response.data;
-
       return {
         content: [
           {
@@ -1714,7 +1727,7 @@ class OverseerrServer {
             text: JSON.stringify({
               dryRun: true,
               wouldRequest: {
-                title: details.title || details.name,
+                title: mediaTitle,
                 mediaType,
                 mediaId,
                 seasons: mediaType === 'tv' ? expandedSeasons : undefined,
@@ -1759,7 +1772,7 @@ class OverseerrServer {
             success: true,
             requestId: response.data.id,
             status: this.getStatusString(response.data.status),
-            message: `Successfully requested ${response.data.media.title || response.data.media.name}`,
+            message: `Successfully requested ${mediaTitle}`,
             seasonsRequested: response.data.seasons?.map((s: any) => s.seasonNumber),
           }, null, 2),
         },

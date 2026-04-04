@@ -8,6 +8,9 @@ dist/
 *.d.ts
 !manual-build.cjs
 
+# TypeScript incremental compilation cache
+tsconfig.tsbuildinfo
+
 # Environment variables
 .env
 .env.local
