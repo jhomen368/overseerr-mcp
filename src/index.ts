@@ -856,7 +856,7 @@ class OverseerrServer {
           this.cache.set('search', cacheKey, searchResult);
         }
 
-        // If no results, it's a pass (not in system)
+        // If no results, it's NOT_FOUND — treated as blocked (cannot be requested)
         if (!searchResult.results || searchResult.results.length === 0) {
           // Not found since NOT_FOUND items cannot be requested
           const baseResult: DedupeResult = {
@@ -1468,7 +1468,7 @@ class OverseerrServer {
         const failedRequests = requestResults.filter(r => !r.success || !r.result?.success);
 
         autoRequestResults = {
-          enqueue: true,
+          executed: true,
           totalRequested: autoRequestQueue.length,
           successful: successfulRequests.length,
           failed: failedRequests.length,
@@ -1476,7 +1476,7 @@ class OverseerrServer {
           errors: failedRequests.map(r => ({
             mediaId: r.item.mediaId,
             mediaType: r.item.mediaType,
-            error: r.error?.message || r.result?.error || 'Unknown error',
+            error: r.result?.error || 'Unknown error',
           })),
         };
       }
@@ -1487,6 +1487,7 @@ class OverseerrServer {
         total: titles.length,
         pass: passCount,
         blocked: blockedCount,
+        failed: titles.length - dedupeResults.length,
         actionable: actionableCount,
         passRate: `${((passCount / titles.length) * 100).toFixed(1)}%`,
       },
