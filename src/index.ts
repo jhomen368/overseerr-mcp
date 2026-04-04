@@ -1700,13 +1700,22 @@ class OverseerrServer {
       }
     }
 
+    // Get media title with caching
+    const detailsCacheKey = { mediaType, mediaId };
+    let mediaTitle = 'Unknown Media';
+
+    let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
+    if (!details) {
+      const detailsResponse = await withRetry(async () => {
+        return await this.axiosInstance.get<MediaDetails>(`/${mediaType}/${mediaId}`);
+      });
+      details = detailsResponse.data;
+      this.cache.set('mediaDetails', detailsCacheKey, details);
+    }
+    mediaTitle = details.title || details.name || 'Unknown Media';
+
     // Dry run - don't actually request
     if (dryRun) {
-      const response = await this.axiosInstance.get<MediaDetails>(
-        `/${mediaType}/${mediaId}`
-      );
-      const details = response.data;
-
       return {
         content: [
           {
@@ -1714,7 +1723,7 @@ class OverseerrServer {
             text: JSON.stringify({
               dryRun: true,
               wouldRequest: {
-                title: details.title || details.name,
+                title: mediaTitle,
                 mediaType,
                 mediaId,
                 seasons: mediaType === 'tv' ? expandedSeasons : undefined,
@@ -1759,7 +1768,7 @@ class OverseerrServer {
             success: true,
             requestId: response.data.id,
             status: this.getStatusString(response.data.status),
-            message: `Successfully requested ${response.data.media.title || response.data.media.name}`,
+            message: `Successfully requested ${mediaTitle}`,
             seasonsRequested: response.data.seasons?.map((s: any) => s.seasonNumber),
           }, null, 2),
         },
