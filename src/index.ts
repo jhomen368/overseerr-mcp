@@ -856,7 +856,7 @@ class OverseerrServer {
           this.cache.set('search', cacheKey, searchResult);
         }
 
-        // If no results, it's a pass (not in system)
+        // If no results, it's NOT_FOUND — treated as blocked (cannot be requested)
         if (!searchResult.results || searchResult.results.length === 0) {
           // Not found since NOT_FOUND items cannot be requested
           const baseResult: DedupeResult = {
@@ -898,9 +898,23 @@ class OverseerrServer {
             this.cache.set('mediaDetails', detailsCacheKey, details);
           }
           
-          // Validate: if requested season > total seasons, try alternates
-          if (details.numberOfSeasons && seasonNumber > details.numberOfSeasons) {
-            console.error(`[WARN] Season ${seasonNumber} requested but "${bestMatch.title || bestMatch.name}" only has ${details.numberOfSeasons} seasons. Trying alternates...`);
+          /**
+           * Helper: check if a season number exists in media details
+           * Prefers the seasons array (authoritative), falls back to numberOfSeasons for safety
+           */
+          const doesSeasonExist = (det: MediaDetails, sNum: number): boolean => {
+            if (det.seasons?.length) {
+              return det.seasons.some(s => s.seasonNumber === sNum);
+            }
+            if (det.numberOfSeasons !== undefined) {
+              return sNum <= det.numberOfSeasons;
+            }
+            return false;
+          };
+
+          // Validate: if requested season does not exist, try alternates
+          if (!doesSeasonExist(details, seasonNumber)) {
+            console.error(`[WARN] Season ${seasonNumber} not found in seasons data for "${bestMatch.title || bestMatch.name}". Trying alternates...`);
             
             // Try each alternate
             let foundValid = false;
@@ -917,26 +931,39 @@ class OverseerrServer {
                 this.cache.set('mediaDetails', altCacheKey, altDetails);
               }
               
-              // Check if this alternate has enough seasons
-              if (altDetails.numberOfSeasons && seasonNumber <= altDetails.numberOfSeasons) {
-                console.error(`[INFO] Found valid alternate: "${alternate.title || alternate.name}" with ${altDetails.numberOfSeasons} seasons`);
+              // Use same helper for alternate validation
+              if (doesSeasonExist(altDetails, seasonNumber)) {
+                console.error(`[INFO] Found valid alternate: "${alternate.title || alternate.name}" for season ${seasonNumber}`);
                 bestMatch = alternate;
                 foundValid = true;
                 break;
               }
             }
             
-            // If no valid match found, return NOT_FOUND
-            if (!foundValid) {
-              return {
-                title: originalTitle,
-                id: 0,
-                mediaType: undefined,
-                status: 'blocked' as const,
-                reasonCode: 'NOT_FOUND',
-                isActionable: false,
-                note: `Season ${seasonNumber} not found - no matching series with that many seasons`
-              };
+            // If no valid alternate found, return blocked with the original show ID
+             // indicating the season is not available for any matching series
+             if (!foundValid) {
+               const baseResult: DedupeResult = {
+                 title: originalTitle,
+                 id: bestMatch.id,
+                 mediaType: 'tv',
+                 status: 'blocked' as const,
+                 reason: `Season ${seasonNumber} not available - show exists but season does not`,
+                 reasonCode: 'SEASON_NOT_FOUND',
+                 isActionable: false,
+                 franchiseInfo: `Season ${seasonNumber} not found in "${bestMatch.title || bestMatch.name}"`,
+               };
+              if (requestedFields.length > 0) {
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'tv', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  seasonNumber,
+                  includeSeason
+                );
+              }
+              return baseResult;
             }
           }
         }
@@ -977,18 +1004,16 @@ class OverseerrServer {
                 franchiseInfo: `Season ${seasonNumber} of ${details.name || bestMatch.name}`,
               };
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'tv', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    seasonNumber,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'tv', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  seasonNumber,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Check if this specific season is requested
@@ -1007,18 +1032,16 @@ class OverseerrServer {
                 franchiseInfo: `Season ${seasonNumber} of ${details.name || bestMatch.name}`,
               };
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'tv', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    seasonNumber,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'tv', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  seasonNumber,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Specific season not in library/requested - it's a pass
@@ -1033,18 +1056,16 @@ class OverseerrServer {
             };
             // Auto-add enhanced details if requested
             if (requestedFields.length > 0) {
-              return {
-                result: this.enrichDedupeResult(
-                  baseResult,
-                  { mediaType: 'tv', id: bestMatch.id },
-                  details,
-                  requestedFields,
-                  seasonNumber,
-                  includeSeason
-                )
-              };
+              return this.enrichDedupeResult(
+                baseResult,
+                { mediaType: 'tv', id: bestMatch.id },
+                details,
+                requestedFields,
+                seasonNumber,
+                includeSeason
+              );
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // CASE 2: No specific season mentioned - check base series availability
@@ -1064,7 +1085,7 @@ class OverseerrServer {
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // Check if there are show-level requests (not season-specific)
@@ -1086,7 +1107,7 @@ class OverseerrServer {
               if (requestedFields.length > 0) {
                 return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
               }
-              return { result: baseResult };
+              return baseResult;
             }
           }
           
@@ -1115,7 +1136,7 @@ class OverseerrServer {
               if (requestedFields.length > 0) {
                 return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Check if ALL regular seasons are requested
@@ -1142,7 +1163,7 @@ class OverseerrServer {
               if (requestedFields.length > 0) {
                 return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Partial availability/requests - check enhanced franchise info
@@ -1163,7 +1184,80 @@ class OverseerrServer {
               }
               franchiseInfo += ` - ${statusParts.join(', ')}`;
             }
-            
+
+            // If requestOptions.seasons provided as specific numbers, check if ALL of those
+            // seasons are already covered (in library or already requested) — if so, block
+            if (args.requestOptions?.seasons && args.requestOptions.seasons !== 'all') {
+              const targetSeasons = args.requestOptions.seasons as number[];
+
+              if (targetSeasons.length === 0) {
+                // Empty seasons array — no specific seasons to check, fall through to pass
+              } else {
+                const allTargetAvailable = targetSeasons.every(sNum =>
+                  (mediaInfo?.seasons?.some(si => si.seasonNumber === sNum && [2, 3, 4, 5].includes(si.status)) || false)
+                );
+                const allTargetRequested = targetSeasons.every(sNum =>
+                  (mediaInfo?.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === sNum)) || false)
+                );
+                const allTargetCovered = targetSeasons.every(sNum =>
+                  (mediaInfo?.seasons?.some(si => si.seasonNumber === sNum && [2, 3, 4, 5].includes(si.status)) || false) ||
+                  (mediaInfo?.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === sNum)) || false)
+                );
+
+                if (allTargetAvailable) {
+                   const baseResult: DedupeResult = {
+                     title: originalTitle,
+                     id: bestMatch.id,
+                     mediaType: 'tv',
+                     status: 'blocked' as const,
+                     reason: `Requested season(s) already in library (${targetSeasons.join(', ')})`,
+                     reasonCode: 'SEASON_AVAILABLE',
+                     isActionable: false,
+                     franchiseInfo: franchiseInfo,
+                   };
+                  if (requestedFields.length > 0) {
+                    return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
+                  }
+                  return baseResult;
+                }
+
+                if (allTargetRequested) {
+                  const baseResult: DedupeResult = {
+                    title: originalTitle,
+                    id: bestMatch.id,
+                    mediaType: 'tv',
+                    status: 'blocked' as const,
+                    reason: `Requested season(s) already requested (${targetSeasons.join(', ')})`,
+                    reasonCode: 'SEASON_REQUESTED',
+                    isActionable: false,
+                    franchiseInfo: franchiseInfo,
+                  };
+                  if (requestedFields.length > 0) {
+                    return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
+                  }
+                  return baseResult;
+                }
+
+                if (allTargetCovered) {
+                  const baseResult: DedupeResult = {
+                    title: originalTitle,
+                    id: bestMatch.id,
+                    mediaType: 'tv',
+                    status: 'blocked' as const,
+                    reason: `Requested season(s) already in library or requested (${targetSeasons.join(', ')})`,
+                    reasonCode: 'SEASON_REQUESTED',
+                    isActionable: false,
+                    franchiseInfo: franchiseInfo,
+                  };
+                  if (requestedFields.length > 0) {
+                    return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
+                  }
+                  return baseResult;
+                }
+              }
+            }
+
+            // Fall through — at least one requested season is not yet available or requested
             // Some seasons in library/requested, but not all - it's a pass
             const baseResult: DedupeResult = {
               title: originalTitle,
@@ -1178,7 +1272,7 @@ class OverseerrServer {
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // Fallback: No seasons info available, check overall status
@@ -1195,18 +1289,16 @@ class OverseerrServer {
             };
             // Enrich if details requested
             if (requestedFields.length > 0) {
-              return {
-                result: this.enrichDedupeResult(
-                  baseResult,
-                  { mediaType: 'tv', id: bestMatch.id },
-                  details,
-                  requestedFields,
-                  null,
-                  includeSeason
-                )
-              };
+              return this.enrichDedupeResult(
+                baseResult,
+                { mediaType: 'tv', id: bestMatch.id },
+                details,
+                requestedFields,
+                null,
+                includeSeason
+              );
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           if (mediaInfo?.requests && mediaInfo.requests.length > 0) {
@@ -1221,18 +1313,16 @@ class OverseerrServer {
             };
             // Enrich if details requested
             if (requestedFields.length > 0) {
-              return {
-                result: this.enrichDedupeResult(
-                  baseResult,
-                  { mediaType: 'tv', id: bestMatch.id },
-                  details,
-                  requestedFields,
-                  null,
-                  includeSeason
-                )
-              };
+              return this.enrichDedupeResult(
+                baseResult,
+                { mediaType: 'tv', id: bestMatch.id },
+                details,
+                requestedFields,
+                null,
+                includeSeason
+              );
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // Not requested - it's a pass
@@ -1247,18 +1337,16 @@ class OverseerrServer {
           
           // Enrich if details requested
           if (requestedFields.length > 0) {
-            return {
-              result: this.enrichDedupeResult(
-                baseResult,
-                { mediaType: 'tv', id: bestMatch.id },
-                details,
-                requestedFields,
-                null,
-                includeSeason
-              )
-            };
+            return this.enrichDedupeResult(
+              baseResult,
+              { mediaType: 'tv', id: bestMatch.id },
+              details,
+              requestedFields,
+              null,
+              includeSeason
+            );
           }
-          return { result: baseResult };
+          return baseResult;
         } else {
           // Movie - simpler check
           const detailsCacheKey = { mediaType: 'movie', mediaId: bestMatch.id };
@@ -1291,18 +1379,16 @@ class OverseerrServer {
               };
               // Enrich if details requested
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'movie', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    null,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'movie', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  null,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             if (mediaInfo.requests && mediaInfo.requests.length > 0) {
@@ -1317,18 +1403,16 @@ class OverseerrServer {
               };
               // Enrich if details requested
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'movie', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    null,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'movie', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  null,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
           }
           
@@ -1344,18 +1428,16 @@ class OverseerrServer {
           
           // Enrich if details requested
           if (requestedFields.length > 0) {
-            return {
-              result: this.enrichDedupeResult(
-                baseResult,
-                { mediaType: 'movie', id: bestMatch.id },
-                details,
-                requestedFields,
-                null,
-                includeSeason
-              )
-            };
+            return this.enrichDedupeResult(
+              baseResult,
+              { mediaType: 'movie', id: bestMatch.id },
+              details,
+              requestedFields,
+              null,
+              includeSeason
+            );
           }
-          return { result: baseResult };
+          return baseResult;
         }
       }
     );
@@ -1486,7 +1568,7 @@ class OverseerrServer {
         const failedRequests = requestResults.filter(r => !r.success || !r.result?.success);
 
         autoRequestResults = {
-          enqueue: true,
+          executed: true,
           totalRequested: autoRequestQueue.length,
           successful: successfulRequests.length,
           failed: failedRequests.length,
@@ -1494,7 +1576,7 @@ class OverseerrServer {
           errors: failedRequests.map(r => ({
             mediaId: r.item.mediaId,
             mediaType: r.item.mediaType,
-            error: r.error?.message || r.result?.error || 'Unknown error',
+            error: r.result?.error?.message || r.result?.error || 'Unknown error',
           })),
         };
       }
@@ -1505,8 +1587,9 @@ class OverseerrServer {
         total: titles.length,
         pass: passCount,
         blocked: blockedCount,
+        failed: titles.length - dedupeResults.length,
         actionable: actionableCount,
-        passRate: `${((passCount / titles.length) * 100).toFixed(1)}%`,
+        passRate: `${(titles.length > 0 ? (passCount / titles.length) * 100 : 0).toFixed(1)}%`,
       },
       results: dedupeResults,
     };
@@ -1661,8 +1744,8 @@ class OverseerrServer {
       }
     }
 
-    // Multi-season confirmation check
-    if (mediaType === 'tv' && !confirmed && expandedSeasons) {
+    // Multi-season confirmation check (skipped for dry runs — no actual request is made)
+    if (mediaType === 'tv' && !confirmed && !dryRun && expandedSeasons) {
       const requireConfirm = process.env.REQUIRE_MULTI_SEASON_CONFIRM !== 'false';
       
       if (requireConfirm) {
@@ -2095,6 +2178,7 @@ class OverseerrServer {
         { params }
       );
       details = response.data;
+      details.mediaType = mediaType!;
       this.cache.set('mediaDetails', cacheKey, details);
     }
 
@@ -2129,6 +2213,7 @@ class OverseerrServer {
             { params: args.language ? { language: args.language } : {} }
           );
           details = response.data;
+          details.mediaType = item.mediaType;
           this.cache.set('mediaDetails', cacheKey, details);
         }
 
