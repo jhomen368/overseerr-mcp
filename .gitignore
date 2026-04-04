@@ -46,5 +46,5 @@ temp/
 !CHANGELOG.md
 !CONTRIBUTING.md
 
-# Memory bank (local context management)
-.kilocode/rules/memory-bank/
+# Local context management
+.kilo/
