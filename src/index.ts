@@ -940,17 +940,30 @@ class OverseerrServer {
               }
             }
             
-            // If no valid match found, return NOT_FOUND
-            if (!foundValid) {
-              return {
-                title: originalTitle,
-                id: 0,
-                mediaType: undefined,
-                status: 'blocked' as const,
-                reasonCode: 'NOT_FOUND',
-                isActionable: false,
-                note: `Season ${seasonNumber} not found - no matching series with that many seasons`
-              };
+            // If no valid alternate found, return blocked with the original show ID
+             // indicating the season is not available for any matching series
+             if (!foundValid) {
+               const baseResult: DedupeResult = {
+                 title: originalTitle,
+                 id: bestMatch.id,
+                 mediaType: 'tv',
+                 status: 'blocked' as const,
+                 reason: `Season ${seasonNumber} not available - show exists but season does not`,
+                 reasonCode: 'SEASON_NOT_FOUND',
+                 isActionable: false,
+                 franchiseInfo: `Season ${seasonNumber} not found in "${bestMatch.title || bestMatch.name}"`,
+               };
+              if (requestedFields.length > 0) {
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'tv', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  seasonNumber,
+                  includeSeason
+                );
+              }
+              return baseResult;
             }
           }
         }
@@ -1192,16 +1205,16 @@ class OverseerrServer {
                 );
 
                 if (allTargetAvailable) {
-                  const baseResult: DedupeResult = {
-                    title: originalTitle,
-                    id: bestMatch.id,
-                    mediaType: 'tv',
-                    status: 'blocked' as const,
-                    reason: `Requested season(s) already in library (${targetSeasons.join(', ')})`,
-                    reasonCode: 'SEASON_AVAILABLE',
-                    isActionable: false,
-                    franchiseInfo: franchiseInfo,
-                  };
+                   const baseResult: DedupeResult = {
+                     title: originalTitle,
+                     id: bestMatch.id,
+                     mediaType: 'tv',
+                     status: 'blocked' as const,
+                     reason: `Requested season(s) already in library (${targetSeasons.join(', ')})`,
+                     reasonCode: 'SEASON_AVAILABLE',
+                     isActionable: false,
+                     franchiseInfo: franchiseInfo,
+                   };
                   if (requestedFields.length > 0) {
                     return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
                   }
