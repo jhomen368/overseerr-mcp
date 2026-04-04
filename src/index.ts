@@ -898,9 +898,12 @@ class OverseerrServer {
             this.cache.set('mediaDetails', detailsCacheKey, details);
           }
           
-          // Validate: if requested season > total seasons, try alternates
-          if (details.numberOfSeasons && seasonNumber > details.numberOfSeasons) {
-            console.error(`[WARN] Season ${seasonNumber} requested but "${bestMatch.title || bestMatch.name}" only has ${details.numberOfSeasons} seasons. Trying alternates...`);
+          // Validate: if requested season does not exist in the seasons array, try alternates
+          // NOTE: numberOfSeasons from TMDB is unreliable for split-cour anime (often reports 1
+          // even when multiple seasons exist). Use the seasons array as the authoritative source.
+          const seasonExistsInArray = details.seasons?.some(s => s.seasonNumber === seasonNumber);
+          if (!seasonExistsInArray) {
+            console.error(`[WARN] Season ${seasonNumber} not found in seasons array for "${bestMatch.title || bestMatch.name}". Trying alternates...`);
             
             // Try each alternate
             let foundValid = false;
@@ -1717,8 +1720,8 @@ class OverseerrServer {
       }
     }
 
-    // Multi-season confirmation check
-    if (mediaType === 'tv' && !confirmed && expandedSeasons) {
+    // Multi-season confirmation check (skipped for dry runs — no actual request is made)
+    if (mediaType === 'tv' && !confirmed && !dryRun && expandedSeasons) {
       const requireConfirm = process.env.REQUIRE_MULTI_SEASON_CONFIRM !== 'false';
       
       if (requireConfirm) {
@@ -2151,6 +2154,7 @@ class OverseerrServer {
         { params }
       );
       details = response.data;
+      details.mediaType = mediaType!;
       this.cache.set('mediaDetails', cacheKey, details);
     }
 
@@ -2185,6 +2189,7 @@ class OverseerrServer {
             { params: args.language ? { language: args.language } : {} }
           );
           details = response.data;
+          details.mediaType = item.mediaType;
           this.cache.set('mediaDetails', cacheKey, details);
         }
 
