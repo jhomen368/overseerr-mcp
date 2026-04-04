@@ -1165,7 +1165,10 @@ class OverseerrServer {
 
               const allTargetAvailable = targetSeasons.every(sNum => mediaInfo?.seasons?.some(si => si.seasonNumber === sNum && [2, 3, 4, 5].includes(si.status)) || false);
               const allTargetRequested = targetSeasons.every(sNum => mediaInfo?.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === sNum)) || false);
-              const allTargetBlocked = allTargetAvailable || allTargetRequested;
+              const allTargetCovered = targetSeasons.every(sNum =>
+                (mediaInfo?.seasons?.some(si => si.seasonNumber === sNum && [2, 3, 4, 5].includes(si.status)) || false) ||
+                (mediaInfo?.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === sNum)) || false)
+              );
 
               if (allTargetAvailable) {
                 const baseResult: DedupeResult = {
@@ -1192,6 +1195,23 @@ class OverseerrServer {
                   status: 'blocked' as const,
                   reason: `Requested season(s) already requested (${targetSeasons.join(', ')})`,
                   reasonCode: 'SEASON_REQUESTED',
+                  isActionable: false,
+                  franchiseInfo: franchiseInfo,
+                };
+                if (requestedFields.length > 0) {
+                  return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
+                }
+                return baseResult;
+              }
+
+              if (allTargetCovered) {
+                const baseResult: DedupeResult = {
+                  title: originalTitle,
+                  id: bestMatch.id,
+                  mediaType: 'tv',
+                  status: 'blocked' as const,
+                  reason: `Requested season(s) already in library or requested (${targetSeasons.join(', ')})`,
+                  reasonCode: 'SEASON_AVAILABLE',
                   isActionable: false,
                   franchiseInfo: franchiseInfo,
                 };
