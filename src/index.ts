@@ -1157,7 +1157,52 @@ class OverseerrServer {
               }
               franchiseInfo += ` - ${statusParts.join(', ')}`;
             }
-            
+
+            // If requestOptions.seasons provided as specific numbers, check if ALL of those
+            // seasons are already covered (in library or already requested) — if so, block
+            if (args.requestOptions?.seasons && args.requestOptions.seasons !== 'all') {
+              const targetSeasons = args.requestOptions.seasons as number[];
+
+              const allTargetAvailable = targetSeasons.every(sNum => mediaInfo?.seasons?.some(si => si.seasonNumber === sNum && [2, 3, 4, 5].includes(si.status)) || false);
+              const allTargetRequested = targetSeasons.every(sNum => mediaInfo?.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === sNum)) || false);
+              const allTargetBlocked = allTargetAvailable || allTargetRequested;
+
+              if (allTargetAvailable) {
+                const baseResult: DedupeResult = {
+                  title: originalTitle,
+                  id: bestMatch.id,
+                  mediaType: 'tv',
+                  status: 'blocked' as const,
+                  reason: `Requested season(s) already in library (${targetSeasons.join(', ')})`,
+                  reasonCode: 'SEASON_AVAILABLE',
+                  isActionable: false,
+                  franchiseInfo: franchiseInfo,
+                };
+                if (requestedFields.length > 0) {
+                  return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
+                }
+                return baseResult;
+              }
+
+              if (allTargetRequested) {
+                const baseResult: DedupeResult = {
+                  title: originalTitle,
+                  id: bestMatch.id,
+                  mediaType: 'tv',
+                  status: 'blocked' as const,
+                  reason: `Requested season(s) already requested (${targetSeasons.join(', ')})`,
+                  reasonCode: 'SEASON_REQUESTED',
+                  isActionable: false,
+                  franchiseInfo: franchiseInfo,
+                };
+                if (requestedFields.length > 0) {
+                  return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
+                }
+                return baseResult;
+              }
+            }
+
+            // Fall through — at least one requested season is not yet available or requested
             // Some seasons in library/requested, but not all - it's a pass
             const baseResult: DedupeResult = {
               title: originalTitle,
