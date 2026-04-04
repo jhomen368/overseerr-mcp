@@ -977,18 +977,16 @@ class OverseerrServer {
                 franchiseInfo: `Season ${seasonNumber} of ${details.name || bestMatch.name}`,
               };
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'tv', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    seasonNumber,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'tv', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  seasonNumber,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Check if this specific season is requested
@@ -1007,18 +1005,16 @@ class OverseerrServer {
                 franchiseInfo: `Season ${seasonNumber} of ${details.name || bestMatch.name}`,
               };
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'tv', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    seasonNumber,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'tv', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  seasonNumber,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Specific season not in library/requested - it's a pass
@@ -1033,18 +1029,16 @@ class OverseerrServer {
             };
             // Auto-add enhanced details if requested
             if (requestedFields.length > 0) {
-              return {
-                result: this.enrichDedupeResult(
-                  baseResult,
-                  { mediaType: 'tv', id: bestMatch.id },
-                  details,
-                  requestedFields,
-                  seasonNumber,
-                  includeSeason
-                )
-              };
+              return this.enrichDedupeResult(
+                baseResult,
+                { mediaType: 'tv', id: bestMatch.id },
+                details,
+                requestedFields,
+                seasonNumber,
+                includeSeason
+              );
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // CASE 2: No specific season mentioned - check base series availability
@@ -1064,7 +1058,7 @@ class OverseerrServer {
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // Check if there are show-level requests (not season-specific)
@@ -1086,7 +1080,7 @@ class OverseerrServer {
               if (requestedFields.length > 0) {
                 return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
               }
-              return { result: baseResult };
+              return baseResult;
             }
           }
           
@@ -1115,7 +1109,7 @@ class OverseerrServer {
               if (requestedFields.length > 0) {
                 return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Check if ALL regular seasons are requested
@@ -1142,7 +1136,7 @@ class OverseerrServer {
               if (requestedFields.length > 0) {
                 return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             // Partial availability/requests - check enhanced franchise info
@@ -1178,7 +1172,7 @@ class OverseerrServer {
             if (requestedFields.length > 0) {
               return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, null, includeSeason);
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // Fallback: No seasons info available, check overall status
@@ -1195,18 +1189,16 @@ class OverseerrServer {
             };
             // Enrich if details requested
             if (requestedFields.length > 0) {
-              return {
-                result: this.enrichDedupeResult(
-                  baseResult,
-                  { mediaType: 'tv', id: bestMatch.id },
-                  details,
-                  requestedFields,
-                  null,
-                  includeSeason
-                )
-              };
+              return this.enrichDedupeResult(
+                baseResult,
+                { mediaType: 'tv', id: bestMatch.id },
+                details,
+                requestedFields,
+                null,
+                includeSeason
+              );
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           if (mediaInfo?.requests && mediaInfo.requests.length > 0) {
@@ -1221,18 +1213,16 @@ class OverseerrServer {
             };
             // Enrich if details requested
             if (requestedFields.length > 0) {
-              return {
-                result: this.enrichDedupeResult(
-                  baseResult,
-                  { mediaType: 'tv', id: bestMatch.id },
-                  details,
-                  requestedFields,
-                  null,
-                  includeSeason
-                )
-              };
+              return this.enrichDedupeResult(
+                baseResult,
+                { mediaType: 'tv', id: bestMatch.id },
+                details,
+                requestedFields,
+                null,
+                includeSeason
+              );
             }
-            return { result: baseResult };
+            return baseResult;
           }
           
           // Not requested - it's a pass
@@ -1247,18 +1237,16 @@ class OverseerrServer {
           
           // Enrich if details requested
           if (requestedFields.length > 0) {
-            return {
-              result: this.enrichDedupeResult(
-                baseResult,
-                { mediaType: 'tv', id: bestMatch.id },
-                details,
-                requestedFields,
-                null,
-                includeSeason
-              )
-            };
+            return this.enrichDedupeResult(
+              baseResult,
+              { mediaType: 'tv', id: bestMatch.id },
+              details,
+              requestedFields,
+              null,
+              includeSeason
+            );
           }
-          return { result: baseResult };
+          return baseResult;
         } else {
           // Movie - simpler check
           const detailsCacheKey = { mediaType: 'movie', mediaId: bestMatch.id };
@@ -1291,18 +1279,16 @@ class OverseerrServer {
               };
               // Enrich if details requested
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'movie', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    null,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'movie', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  null,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
             
             if (mediaInfo.requests && mediaInfo.requests.length > 0) {
@@ -1317,18 +1303,16 @@ class OverseerrServer {
               };
               // Enrich if details requested
               if (requestedFields.length > 0) {
-                return {
-                  result: this.enrichDedupeResult(
-                    baseResult,
-                    { mediaType: 'movie', id: bestMatch.id },
-                    details,
-                    requestedFields,
-                    null,
-                    includeSeason
-                  )
-                };
+                return this.enrichDedupeResult(
+                  baseResult,
+                  { mediaType: 'movie', id: bestMatch.id },
+                  details,
+                  requestedFields,
+                  null,
+                  includeSeason
+                );
               }
-              return { result: baseResult };
+              return baseResult;
             }
           }
           
@@ -1344,18 +1328,16 @@ class OverseerrServer {
           
           // Enrich if details requested
           if (requestedFields.length > 0) {
-            return {
-              result: this.enrichDedupeResult(
-                baseResult,
-                { mediaType: 'movie', id: bestMatch.id },
-                details,
-                requestedFields,
-                null,
-                includeSeason
-              )
-            };
+            return this.enrichDedupeResult(
+              baseResult,
+              { mediaType: 'movie', id: bestMatch.id },
+              details,
+              requestedFields,
+              null,
+              includeSeason
+            );
           }
-          return { result: baseResult };
+          return baseResult;
         }
       }
     );
