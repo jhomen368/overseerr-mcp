@@ -898,12 +898,23 @@ class OverseerrServer {
             this.cache.set('mediaDetails', detailsCacheKey, details);
           }
           
-          // Validate: if requested season does not exist in the seasons array, try alternates
-          // NOTE: numberOfSeasons from TMDB is unreliable for split-cour anime (often reports 1
-          // even when multiple seasons exist). Use the seasons array as the authoritative source.
-          const seasonExistsInArray = details.seasons?.some(s => s.seasonNumber === seasonNumber);
-          if (!seasonExistsInArray) {
-            console.error(`[WARN] Season ${seasonNumber} not found in seasons array for "${bestMatch.title || bestMatch.name}". Trying alternates...`);
+          /**
+           * Helper: check if a season number exists in media details
+           * Prefers the seasons array (authoritative), falls back to numberOfSeasons for safety
+           */
+          const doesSeasonExist = (det: MediaDetails, sNum: number): boolean => {
+            if (det.seasons?.length) {
+              return det.seasons.some(s => s.seasonNumber === sNum);
+            }
+            if (det.numberOfSeasons !== undefined) {
+              return sNum <= det.numberOfSeasons;
+            }
+            return false;
+          };
+
+          // Validate: if requested season does not exist, try alternates
+          if (!doesSeasonExist(details, seasonNumber)) {
+            console.error(`[WARN] Season ${seasonNumber} not found in seasons data for "${bestMatch.title || bestMatch.name}". Trying alternates...`);
             
             // Try each alternate
             let foundValid = false;
@@ -920,9 +931,9 @@ class OverseerrServer {
                 this.cache.set('mediaDetails', altCacheKey, altDetails);
               }
               
-              // Check if this alternate has enough seasons
-              if (altDetails.numberOfSeasons && seasonNumber <= altDetails.numberOfSeasons) {
-                console.error(`[INFO] Found valid alternate: "${alternate.title || alternate.name}" with ${altDetails.numberOfSeasons} seasons`);
+              // Use same helper for alternate validation
+              if (doesSeasonExist(altDetails, seasonNumber)) {
+                console.error(`[INFO] Found valid alternate: "${alternate.title || alternate.name}" for season ${seasonNumber}`);
                 bestMatch = alternate;
                 foundValid = true;
                 break;
@@ -1552,7 +1563,7 @@ class OverseerrServer {
           errors: failedRequests.map(r => ({
             mediaId: r.item.mediaId,
             mediaType: r.item.mediaType,
-            error: r.result?.error || 'Unknown error',
+            error: r.result?.error?.message || r.result?.error || 'Unknown error',
           })),
         };
       }
@@ -1565,7 +1576,7 @@ class OverseerrServer {
         blocked: blockedCount,
         failed: titles.length - dedupeResults.length,
         actionable: actionableCount,
-        passRate: `${(dedupeResults.length > 0 ? (passCount / dedupeResults.length) * 100 : 0).toFixed(1)}%`,
+        passRate: `${(titles.length > 0 ? (passCount / titles.length) * 100 : 0).toFixed(1)}%`,
       },
       results: dedupeResults,
     };
