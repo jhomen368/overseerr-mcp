@@ -1525,6 +1525,21 @@ class OverseerrServer {
     };
   }
 
+  private async getMediaDetails(mediaType: string, mediaId: number): Promise<MediaDetails> {
+    const cacheKey = { mediaType, mediaId };
+    let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
+
+    if (!details) {
+      const response = await withRetry(async () => {
+        return await this.axiosInstance.get<MediaDetails>(`/${mediaType}/${mediaId}`);
+      });
+      details = response.data;
+      this.cache.set('mediaDetails', cacheKey, details);
+    }
+
+    return details;
+  }
+
   private async handleRequestMedia(args: any) {
     const requestArgs = args as RequestMediaArgs;
 
@@ -1559,8 +1574,7 @@ class OverseerrServer {
     let expandedSeasons: number[] | undefined = undefined;
     if (mediaType === 'tv' && seasons) {
       if (seasons === 'all') {
-        const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
-        const details = response.data;
+        const details = await this.getMediaDetails(mediaType, mediaId!);
         
         // Get all regular seasons (exclude season 0 - specials)
         const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
@@ -1653,8 +1667,7 @@ class OverseerrServer {
       
       if (requireConfirm) {
         // Get details to calculate episode count
-        const response = await this.axiosInstance.get<MediaDetails>(`/tv/${mediaId}`);
-        const details = response.data;
+        const details = await this.getMediaDetails(mediaType, mediaId!);
 
         const totalSeasons = details.numberOfSeasons || 0;
         const seasonsToRequest = expandedSeasons;
@@ -1701,18 +1714,9 @@ class OverseerrServer {
     }
 
     // Get media title with caching
-    const detailsCacheKey = { mediaType, mediaId };
+    const details = await this.getMediaDetails(mediaType!, mediaId!);
     let mediaTitle: string;
-
-    let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
-    if (!details) {
-      const detailsResponse = await withRetry(async () => {
-        return await this.axiosInstance.get<MediaDetails>(`/${mediaType}/${mediaId}`);
-      });
-      details = detailsResponse.data;
-      this.cache.set('mediaDetails', detailsCacheKey, details);
-    }
-    mediaTitle = details.title || details.name || 'Unknown Media';
+    mediaTitle = details.title ?? details.name ?? 'Unknown Media';
 
     // Dry run - don't actually request
     if (dryRun) {
