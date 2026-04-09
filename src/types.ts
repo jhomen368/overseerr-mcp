@@ -1,20 +1,4 @@
 // Overseerr API response types
-export interface SearchResult {
-  page: number;
-  totalPages: number;
-  totalResults: number;
-  results: Array<{
-    id: number;
-    mediaType: string;
-    title?: string;
-    name?: string;
-    overview: string;
-    posterPath?: string;
-    releaseDate?: string;
-    firstAirDate?: string;
-    voteAverage?: number;
-  }>;
-}
 
 export interface MediaRequest {
   id: number;
@@ -49,6 +33,26 @@ export interface MediaInfo {
     createdAt: string;
     updatedAt: string;
   }>;
+}
+
+export interface SearchResultItem {
+  id: number;
+  mediaType: string;
+  title?: string;
+  name?: string;
+  overview: string;
+  posterPath?: string;
+  releaseDate?: string;
+  firstAirDate?: string;
+  voteAverage?: number;
+  mediaInfo?: MediaInfo;
+}
+
+export interface SearchResult {
+  page: number;
+  totalPages: number;
+  totalResults: number;
+  results: SearchResultItem[];
 }
 
 export interface MediaDetails {
