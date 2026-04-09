@@ -14,6 +14,7 @@ import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBest
 import { withRetry, batchWithRetry } from './utils/retry.js';
 import {
   SearchResult,
+  SearchResultItem,
   MediaRequest,
   MediaDetails,
   SearchMediaArgs,
@@ -2367,7 +2368,7 @@ class OverseerrServer {
     return limit ? results.slice(0, limit) : results;
   }
 
-  private formatCompactResult(item: any, mediaInfo?: MediaInfo): CompactMediaResult {
+  private formatCompactResult(item: SearchResultItem, mediaInfo?: MediaInfo): CompactMediaResult {
     let status = 'NOT_REQUESTED';
     
     // Use explicitly passed mediaInfo, or fall back to mediaInfo embedded in the search result item
