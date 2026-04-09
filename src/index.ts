@@ -2370,11 +2370,17 @@ class OverseerrServer {
   private formatCompactResult(item: any, mediaInfo?: MediaInfo): CompactMediaResult {
     let status = 'NOT_REQUESTED';
     
-    if (mediaInfo) {
-      if (mediaInfo.status === 5) {
-        status = 'AVAILABLE';
-      } else if (mediaInfo.requests && mediaInfo.requests.length > 0) {
-        const latestRequest = mediaInfo.requests[0];
+    // Use explicitly passed mediaInfo, or fall back to mediaInfo embedded in the search result item
+    const info = mediaInfo || item.mediaInfo;
+    if (info) {
+      // Map all tracked media statuses (PENDING/PROCESSING/PARTIALLY_AVAILABLE/AVAILABLE)
+      // using the canonical getMediaStatusString mapping, not just status === 5
+      if (info.status && info.status >= 2 && info.status <= 5) {
+        status = this.getMediaStatusString(info.status);
+      }
+      // Request status takes precedence when present (e.g. APPROVED, PENDING_APPROVAL)
+      if (info.requests && info.requests.length > 0) {
+        const latestRequest = info.requests[0];
         status = this.getStatusString(latestRequest.status);
       }
     }
