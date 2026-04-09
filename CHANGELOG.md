@@ -1,9 +1,17 @@
-# Changelog
+## [2.1.2] - 2026-04-08
 
-All notable changes to this project will be documented in this file.
+### Fixed
+- **Non-existent season handling**: Searching for a season that doesn't exist (e.g. "Overlord S99") now correctly returns the real show ID with a `SEASON_NOT_FOUND` reason code instead of treating the whole search as `NOT_FOUND`
+- **Compact search status accuracy**: `search_media` in compact format now correctly reflects library availability by reading `mediaInfo` from search results — titles already in Plex will show `AVAILABLE` instead of `NOT_REQUESTED`
+- **autoRequest summary counts**: Fixed incorrect `pass`/`blocked`/`actionable` counts caused by double-wrapped processor returns; summary now always reflects the actual dedupe results
+- **autoRequest result field**: Fixed the `autoRequests` result object not being populated correctly when `autoRequest: true` is used
+- **Season availability blocking**: Dedupe mode now correctly blocks titles where the requested season is already in the library (previously some already-available seasons could slip through as actionable)
+- **Pass rate calculation**: `passRate` in dedupe summary now uses total input titles as the denominator instead of the deduped result count, giving a more accurate percentage
+- **Season validation with empty array**: Fixed a crash when `dedupeMode` received a title with no specific seasons to validate against
+- **Media title fallback**: Removed an unnecessary title fallback that could produce undefined/blank titles in request responses
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Breaking Changes
+- `passRate` in dedupe summary now divides by total input titles rather than deduped results — the percentage will be lower if duplicate titles were in the input list
 
 ## [2.1.1] - 2026-03-25
 

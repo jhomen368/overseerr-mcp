@@ -1,6 +1,6 @@
 {
   "name": "@jhomen368/overseerr-mcp",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "MCP server for Overseerr/Seerr media request automation",
   "type": "module",
   "author": "jhomen368",
@@ -71,9 +71,12 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
-    "@types/node": "^25.0.3",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@types/express": "^5.0.5",
-    "typescript": "^6.0.2"
+    "@types/node": "^25.0.3",
+    "conventional-changelog-cli": "^5.0.0",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0"
