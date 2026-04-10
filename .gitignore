@@ -51,3 +51,4 @@ temp/
 
 # Local context management
 .kilo/
+.opencode/
