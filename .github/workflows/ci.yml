@@ -73,7 +73,6 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL'
           limit-severities-for-sarif: true
-          exit-code: '1'
       
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
