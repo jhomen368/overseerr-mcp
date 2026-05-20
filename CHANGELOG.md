@@ -1,3 +1,14 @@
+## [2.1.3] - 2026-05-20
+
+### Fixed
+- **Request API path**: Fixed `manage_media_requests` returning 404 errors — the list/summary endpoints were using `/requests` (plural) instead of the correct `/request` (singular) API path
+
+### Changed
+- **Dependencies**: Bumped `@commitlint/cli` to 21.0.1, `@commitlint/config-conventional` to 21.0.1, `@types/node` to 25.9.0, `axios` to 1.16.1, `typescript` to 6.0.3, `@modelcontextprotocol/sdk` to 1.29.0
+- **Docker**: Bumped base image from `node:25-alpine` to `node:26-alpine`
+- **CI**: Bumped `aquasecurity/trivy-action` to 0.36.0; allowed CI to see Trivy scan results
+- **Gitignore**: Added `opencode.json` to `.gitignore`
+
 ## [2.1.2] - 2026-04-08
 
 ### Fixed
