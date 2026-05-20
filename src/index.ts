@@ -1976,7 +1976,7 @@ class OverseerrServer {
       }
 
       // Don't cache summary queries as they need fresh data
-      const response = await this.axiosInstance.get('/requests', { params });
+      const response = await this.axiosInstance.get('/request', { params });
       const requests = response.data;
 
       const statusCounts: Record<string, number> = {};
@@ -2014,7 +2014,7 @@ class OverseerrServer {
         params.filter = filter;
       }
 
-      const response = await this.axiosInstance.get('/requests', { params });
+      const response = await this.axiosInstance.get('/request', { params });
       requests = response.data;
       this.cache.set('requests', cacheKey, requests);
     }
