@@ -52,3 +52,4 @@ temp/
 # Local context management
 .kilo/
 .opencode/
+opencode.json
