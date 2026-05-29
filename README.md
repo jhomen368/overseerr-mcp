@@ -121,8 +121,31 @@ curl http://localhost:8085/health
 ```
 
 **Connect MCP clients:**
-- **Transport**: Streamable HTTP (SSE)
+- **Transport**: Streamable HTTP
 - **URL**: `http://localhost:8085/mcp`
+
+**Claude custom connector:**
+
+Expose the container over HTTPS at a publicly reachable URL and add that `/mcp` URL as a Claude custom connector. No Supergateway sidecar is required for Docker or `HTTP_MODE=true`; the server now speaks native Streamable HTTP. Keep `SEERR_API_KEY` (or legacy `OVERSEERR_API_KEY`) only in the server environment so it is never sent to Claude.
+
+Example Docker Compose for a Claude-compatible remote MCP endpoint behind your reverse proxy:
+
+```yaml
+services:
+  seerr-mcp:
+    image: ghcr.io/jhomen368/overseerr-mcp:latest
+    container_name: seerr-mcp
+    ports:
+      - "8085:8085"
+    environment:
+      SEERR_URL: https://your-seerr-instance.com
+      SEERR_API_KEY: your-api-key-here
+      HTTP_MODE: "true"
+      PORT: "8085"
+    restart: unless-stopped
+```
+
+Add `https://your-public-host.example.com/mcp` in Claude's custom connector settings. This endpoint is authless from Claude's perspective; access control should be handled by where and how you expose the server, while the Seerr/Overseerr API key remains server-side.
 
 ### Option 3: From Source
 
