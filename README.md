@@ -91,6 +91,8 @@ Add to your configuration file:
 
 ### Option 2: Docker (Remote Access)
 
+The official image is published to GitHub Container Registry (GHCR):
+
 ```bash
 docker run -d \
   --name seerr-mcp \
@@ -110,10 +112,35 @@ services:
     ports:
       - "8085:8085"
     environment:
-      - SEERR_URL=https://your-seerr-instance.com
-      - SEERR_API_KEY=your-api-key-here
+      SEERR_URL: https://your-seerr-instance.com
+      SEERR_API_KEY: your-api-key-here
     restart: unless-stopped
 ```
+
+**Using a fork image:**
+
+This repository publishes Docker images from GitHub Actions on pushes to `main`, tags like `v2.1.3`, and manual `workflow_dispatch` runs. If you fork the repository and enable GitHub Actions, your fork publishes its own image at:
+
+```text
+ghcr.io/<your-github-user-or-org>/<your-fork-repo>:latest
+```
+
+For the common case where the fork is still named `overseerr-mcp`, use:
+
+```yaml
+services:
+  seerr-mcp:
+    image: ghcr.io/<your-github-user-or-org>/overseerr-mcp:latest
+    container_name: seerr-mcp
+    ports:
+      - "8085:8085"
+    environment:
+      SEERR_URL: https://your-seerr-instance.com
+      SEERR_API_KEY: your-api-key-here
+    restart: unless-stopped
+```
+
+If your fork or package is private, authenticate the Docker host first with `docker login ghcr.io` using a GitHub token that can read packages.
 
 **Test the server:**
 ```bash

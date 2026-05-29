@@ -2,8 +2,11 @@ name: Build & Publish Docker
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,9 +15,6 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    env:
-      VERSION: latest
-      IS_TAG: 'false'
 
     steps:
       - name: Checkout
@@ -22,25 +22,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Determine version
-        id: ver
+      - name: Resolve image name
         run: |
-          # If this run is triggered by a tag, derive VERSION from the tag (strip leading "v")
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            VER=${GITHUB_REF#refs/tags/}
-            VER=${VER#v}
-            echo "VERSION=${VER}" >> $GITHUB_ENV
-            echo "IS_TAG=true" >> $GITHUB_ENV
-            # local copies so this step's logs show the resolved values
-            VERSION="${VER}"
-            IS_TAG=true
-          else
-            echo "VERSION=latest" >> $GITHUB_ENV
-            echo "IS_TAG=false" >> $GITHUB_ENV
-            VERSION=latest
-            IS_TAG=false
-          fi
-          echo "Using REF=${GITHUB_REF}, VERSION=${VERSION}, IS_TAG=${IS_TAG}"
+          IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+          echo "Publishing ${IMAGE_NAME}"
 
       - name: Set up QEMU (for multi-arch builds)
         uses: docker/setup-qemu-action@v4
@@ -55,6 +41,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build & push multi-arch image
         uses: docker/build-push-action@v7
         with:
@@ -62,6 +60,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/overseerr-mcp:${{ env.VERSION }}
-            ghcr.io/${{ github.repository_owner }}/overseerr-mcp:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
