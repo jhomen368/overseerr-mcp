@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -6,6 +7,7 @@ import {
   ErrorCode,
   ListToolsRequestSchema,
   McpError,
+  isInitializeRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 import axios, { AxiosInstance } from 'axios';
 import { CacheManager } from './utils/cache.js';
@@ -189,9 +191,8 @@ class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
   private cache: CacheManager;
-  private activeSseConnection: boolean = false;
 
-  constructor() {
+  constructor(registerSignalHandlers: boolean = true, cache?: CacheManager) {
     this.server = new Server(
       {
         name: 'seerr-mcp',
@@ -212,14 +213,16 @@ class OverseerrServer {
       },
     });
 
-    this.cache = new CacheManager();
+    this.cache = cache ?? new CacheManager();
     this.setupToolHandlers();
 
     this.server.onerror = (error: Error) => console.error('[MCP Error]', error);
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
+    if (registerSignalHandlers) {
+      process.on('SIGINT', async () => {
+        await this.server.close();
+        process.exit(0);
+      });
+    }
   }
 
   /**
@@ -2428,15 +2431,31 @@ class OverseerrServer {
   }
 
   async runHttp(port: number = 8085) {
-    const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js');
+    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
     const express = (await import('express')).default;
 
     const app = express();
+    app.use(express.json({ limit: '4mb' }));
+
+    // Claude custom connectors call this endpoint from Anthropic's service. Keep
+    // the Seerr API key server-side and only expose the MCP tools over HTTP.
+    app.use((_req: any, res: any, next: any) => {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Accept, Content-Type, MCP-Session-Id, MCP-Protocol-Version, Last-Event-ID');
+      res.header('Access-Control-Expose-Headers', 'MCP-Session-Id');
+      next();
+    });
+
+    app.options('/mcp', (_req: any, res: any) => {
+      res.sendStatus(204);
+    });
 
     app.get('/health', (_req: any, res: any) => {
       res.json({
         status: 'ok',
         service: 'seerr-mcp',
+        transport: 'streamable-http',
         compatibility: ['seerr', 'overseerr', 'jellyseerr'],
         version: VERSION
       });
@@ -2446,39 +2465,99 @@ class OverseerrServer {
       res.json(this.cache.getStats());
     });
 
+    const transports: Record<string, InstanceType<typeof StreamableHTTPServerTransport>> = {};
+
+    const createSessionServer = () => new OverseerrServer(false, this.cache);
+
     app.post('/mcp', async (req: any, res: any) => {
-      // Single-client enforcement: reject if another client is already connected
-      if (this.activeSseConnection) {
-        res.status(409).set('Retry-After', '5').json({
-          error: 'Another MCP client is already connected. Disconnect the existing client first.'
-        });
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+      try {
+        let transport: InstanceType<typeof StreamableHTTPServerTransport>;
+
+        if (sessionId && transports[sessionId]) {
+          transport = transports[sessionId];
+        } else if (!sessionId && isInitializeRequest(req.body)) {
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId: string) => {
+              transports[newSessionId] = transport;
+            },
+          });
+
+          transport.onclose = () => {
+            const closedSessionId = transport.sessionId;
+            if (closedSessionId) {
+              delete transports[closedSessionId];
+            }
+          };
+
+          const sessionServer = createSessionServer();
+          await sessionServer.server.connect(transport);
+        } else {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Bad Request: missing or invalid MCP session ID',
+            },
+            id: null,
+          });
+          return;
+        }
+
+        await transport.handleRequest(req, res, req.body);
+      } catch (error) {
+        console.error('[MCP] Streamable HTTP POST error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32603,
+              message: 'Internal server error',
+            },
+            id: null,
+          });
+        }
+      }
+    });
+
+    app.get('/mcp', async (req: any, res: any) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      if (!sessionId || !transports[sessionId]) {
+        res.status(400).send('Invalid or missing MCP session ID');
         return;
       }
 
-      // Set flag BEFORE the async connect to prevent any race at the await point
-      this.activeSseConnection = true;
-
       try {
-        console.error('New MCP connection established');
-        const transport = new SSEServerTransport('/message', res);
-        await this.server.connect(transport);
+        await transports[sessionId].handleRequest(req, res);
       } catch (error) {
-        this.activeSseConnection = false;  // Reset on failure so future connections aren't permanently blocked
-        console.error('[MCP] Connection error:', error);
-        throw error;
+        console.error('[MCP] Streamable HTTP GET error:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error opening MCP stream');
+        }
+      }
+    });
+
+    app.delete('/mcp', async (req: any, res: any) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      if (!sessionId || !transports[sessionId]) {
+        res.status(400).send('Invalid or missing MCP session ID');
+        return;
       }
 
-      req.on('close', () => {
-        console.log('MCP connection closed');
-        this.activeSseConnection = false;
-        this.server.close().catch(err => {
-          console.error('[MCP] Error closing server on disconnect:', err);
-        });
-      });
+      try {
+        await transports[sessionId].handleRequest(req, res);
+      } catch (error) {
+        console.error('[MCP] Streamable HTTP DELETE error:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error closing MCP session');
+        }
+      }
     });
 
     app.listen(port, () => {
-      console.error(`Seerr MCP server v${VERSION} running on HTTP port ${port}`);
+      console.error(`Seerr MCP server v${VERSION} running on Streamable HTTP port ${port}`);
       console.error(`Supports Seerr and Overseerr (legacy) instances`);
       console.error(`MCP endpoint: http://localhost:${port}/mcp`);
       console.error(`Health check: http://localhost:${port}/health`);
