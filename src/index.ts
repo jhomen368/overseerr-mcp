@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
   ErrorCode,
+  isInitializeRequest,
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -189,7 +191,6 @@ class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
   private cache: CacheManager;
-  private activeSseConnection: boolean = false;
 
   constructor() {
     this.server = new Server(
@@ -361,8 +362,9 @@ class OverseerrServer {
     }
   }
 
-  private setupToolHandlers() {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  private setupToolHandlers(server?: Server) {
+    const srv = server ?? this.server;
+    srv.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
           name: 'search_media',
@@ -684,7 +686,7 @@ class OverseerrServer {
       ],
     }));
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
+    srv.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       try {
         switch (request.params.name) {
           case 'search_media':
@@ -2428,17 +2430,37 @@ class OverseerrServer {
   }
 
   async runHttp(port: number = 8085) {
-    const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js');
+    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
     const express = (await import('express')).default;
 
     const app = express();
+    app.use(express.json({ limit: '4mb' }));
+
+    const sessions = new Map<string, {
+      transport: InstanceType<typeof StreamableHTTPServerTransport>;
+      server: Server;
+      lastUsed: number;
+    }>();
+
+    const STALE_TIMEOUT = 30 * 60 * 1000;
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [id, session] of sessions) {
+        if (now - session.lastUsed > STALE_TIMEOUT) {
+          session.server.close().catch(() => {});
+          sessions.delete(id);
+        }
+      }
+    }, 5 * 60 * 1000);
+    cleanupInterval.unref();
 
     app.get('/health', (_req: any, res: any) => {
       res.json({
         status: 'ok',
         service: 'seerr-mcp',
+        transport: 'streamable-http',
         compatibility: ['seerr', 'overseerr', 'jellyseerr'],
-        version: VERSION
+        version: VERSION,
       });
     });
 
@@ -2446,39 +2468,149 @@ class OverseerrServer {
       res.json(this.cache.getStats());
     });
 
+    const MAX_SESSIONS = 100;
+
     app.post('/mcp', async (req: any, res: any) => {
-      // Single-client enforcement: reject if another client is already connected
-      if (this.activeSseConnection) {
-        res.status(409).set('Retry-After', '5').json({
-          error: 'Another MCP client is already connected. Disconnect the existing client first.'
+      const raw = req.headers['mcp-session-id'];
+      const sessionId = Array.isArray(raw) ? raw[0] : raw as string | undefined;
+
+      try {
+        // Existing session — forward request to its transport
+        if (sessionId && sessions.has(sessionId)) {
+          const session = sessions.get(sessionId)!;
+          session.lastUsed = Date.now();
+          await session.transport.handleRequest(req, res, req.body);
+          return;
+        }
+
+        // New session — must be an initialize request
+        if (!sessionId && isInitializeRequest(req.body)) {
+          if (sessions.size >= MAX_SESSIONS) {
+            res.status(503).json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32000,
+                message: 'Server at session capacity, try again later',
+              },
+              id: null,
+            });
+            return;
+          }
+          const server = new Server(
+            { name: 'seerr-mcp', version: VERSION },
+            { capabilities: { tools: {} } },
+          );
+
+          server.onerror = (error: Error) => console.error('[MCP Error]', error);
+
+          const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId: string) => {
+              sessions.set(newSessionId, { transport, server, lastUsed: Date.now() });
+            },
+          });
+
+          transport.onclose = () => {
+            const sid = transport.sessionId;
+            if (sid) {
+              sessions.delete(sid);
+            }
+            server.close().catch(() => {});
+          };
+
+          this.setupToolHandlers(server);
+          await server.connect(transport);
+          await transport.handleRequest(req, res, req.body);
+          return;
+        }
+
+        // Session ID provided but not found (e.g. after server restart) → 404
+        // Per MCP spec, clients must re-initialize on 404
+        if (sessionId) {
+          res.status(404).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Session not found',
+            },
+            id: null,
+          });
+          return;
+        }
+
+        // No session ID and not an initialize request → 400
+        res.status(400).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32000,
+            message: 'Bad Request: expected initialize request',
+          },
+          id: null,
         });
+      } catch (error) {
+        console.error('[MCP] POST error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32603,
+              message: 'Internal server error',
+            },
+            id: null,
+          });
+        }
+      }
+    });
+
+    app.get('/mcp', async (req: any, res: any) => {
+      const raw = req.headers['mcp-session-id'];
+      const sessionId = Array.isArray(raw) ? raw[0] : raw as string | undefined;
+      if (!sessionId) {
+        res.status(400).send('Missing MCP-Session-Id header');
+        return;
+      }
+      if (!sessions.has(sessionId)) {
+        res.status(404).send('Session not found');
         return;
       }
 
-      // Set flag BEFORE the async connect to prevent any race at the await point
-      this.activeSseConnection = true;
-
       try {
-        console.error('New MCP connection established');
-        const transport = new SSEServerTransport('/message', res);
-        await this.server.connect(transport);
+        const session = sessions.get(sessionId)!;
+        session.lastUsed = Date.now();
+        await session.transport.handleRequest(req, res);
       } catch (error) {
-        this.activeSseConnection = false;  // Reset on failure so future connections aren't permanently blocked
-        console.error('[MCP] Connection error:', error);
-        throw error;
+        console.error('[MCP] GET error:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error opening MCP stream');
+        }
+      }
+    });
+
+    app.delete('/mcp', async (req: any, res: any) => {
+      const raw = req.headers['mcp-session-id'];
+      const sessionId = Array.isArray(raw) ? raw[0] : raw as string | undefined;
+      if (!sessionId) {
+        res.status(400).send('Missing MCP-Session-Id header');
+        return;
+      }
+      if (!sessions.has(sessionId)) {
+        res.status(404).send('Session not found');
+        return;
       }
 
-      req.on('close', () => {
-        console.log('MCP connection closed');
-        this.activeSseConnection = false;
-        this.server.close().catch(err => {
-          console.error('[MCP] Error closing server on disconnect:', err);
-        });
-      });
+      try {
+        const session = sessions.get(sessionId)!;
+        await session.transport.handleRequest(req, res);
+      } catch (error) {
+        console.error('[MCP] DELETE error:', error);
+        if (!res.headersSent) {
+          res.status(500).send('Error closing MCP session');
+        }
+      }
     });
 
     app.listen(port, () => {
-      console.error(`Seerr MCP server v${VERSION} running on HTTP port ${port}`);
+      console.error(`Seerr MCP server v${VERSION} running on Streamable HTTP port ${port}`);
       console.error(`Supports Seerr and Overseerr (legacy) instances`);
       console.error(`MCP endpoint: http://localhost:${port}/mcp`);
       console.error(`Health check: http://localhost:${port}/health`);
