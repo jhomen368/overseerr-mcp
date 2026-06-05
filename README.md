@@ -121,7 +121,7 @@ curl http://localhost:8085/health
 ```
 
 **Connect MCP clients:**
-- **Transport**: Streamable HTTP (SSE)
+- **Transport**: Streamable HTTP
 - **URL**: `http://localhost:8085/mcp`
 
 ### Option 3: From Source
