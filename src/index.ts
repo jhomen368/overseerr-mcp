@@ -2468,8 +2468,11 @@ class OverseerrServer {
       res.json(this.cache.getStats());
     });
 
+    const MAX_SESSIONS = 100;
+
     app.post('/mcp', async (req: any, res: any) => {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      const raw = req.headers['mcp-session-id'];
+      const sessionId = Array.isArray(raw) ? raw[0] : raw as string | undefined;
 
       try {
         // Existing session — forward request to its transport
@@ -2482,6 +2485,17 @@ class OverseerrServer {
 
         // New session — must be an initialize request
         if (!sessionId && isInitializeRequest(req.body)) {
+          if (sessions.size >= MAX_SESSIONS) {
+            res.status(503).json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32000,
+                message: 'Server at session capacity, try again later',
+              },
+              id: null,
+            });
+            return;
+          }
           const server = new Server(
             { name: 'seerr-mcp', version: VERSION },
             { capabilities: { tools: {} } },
@@ -2549,7 +2563,8 @@ class OverseerrServer {
     });
 
     app.get('/mcp', async (req: any, res: any) => {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      const raw = req.headers['mcp-session-id'];
+      const sessionId = Array.isArray(raw) ? raw[0] : raw as string | undefined;
       if (!sessionId) {
         res.status(400).send('Missing MCP-Session-Id header');
         return;
@@ -2572,7 +2587,8 @@ class OverseerrServer {
     });
 
     app.delete('/mcp', async (req: any, res: any) => {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      const raw = req.headers['mcp-session-id'];
+      const sessionId = Array.isArray(raw) ? raw[0] : raw as string | undefined;
       if (!sessionId) {
         res.status(400).send('Missing MCP-Session-Id header');
         return;
