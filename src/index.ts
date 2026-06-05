@@ -2003,7 +2003,7 @@ class OverseerrServer {
 
     // Regular list mode - use pagination
     const cacheKey = { filter, take, skip, sort };
-    let requests = this.cache.get<{ results: MediaRequest[]; PageInfo: any }>('requests', cacheKey);
+    let requests = this.cache.get<{ results: MediaRequest[]; pageInfo: any }>('requests', cacheKey);
 
     if (!requests) {
       const params: any = {
@@ -2031,7 +2031,7 @@ class OverseerrServer {
           type: 'text',
           text: JSON.stringify({
             results: formatted,
-            pageInfo: requests?.PageInfo,
+            pageInfo: requests?.pageInfo,
           }, null, 2),
         },
       ],
