@@ -1,3 +1,15 @@
+## [2.2.0] - 2026-06-05
+
+### Added
+- **Streamable HTTP transport**: Replaced legacy SSE transport with the MCP Streamable HTTP transport, enabling proper multi-session support and broader client compatibility
+
+### Fixed
+- **Session management**: Hardened HTTP session handling — unknown session IDs now return 404, requests without a session ID return 400
+- **Pagination metadata**: Fixed `pageInfo` always returning `undefined` in `manage_media_requests` list responses due to a casing mismatch (`PageInfo` → `pageInfo`)
+
+### Changed
+- **Dependencies**: Bumped `@commitlint/cli` to 21.0.2, `@commitlint/config-conventional` to 21.0.2, `@types/node` to 25.9.1, `qs` (transitive); patched `hono` to 4.12.23 to resolve moderate security vulnerabilities (IP restriction bypass, cookie injection, JWT scheme validation, path routing)
+
 ## [2.1.3] - 2026-05-20
 
 ### Fixed
