@@ -1826,6 +1826,14 @@ class OverseerrServer {
       };
     }
 
+    // Guard: reject empty seasons before hitting the API — avoids silent success with no actual request
+    if (mediaType === 'tv' && (!expandedSeasons || expandedSeasons.length === 0)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'No valid seasons specified. Use seasons: [1, 2, 3] for specific seasons or seasons: "all" for all seasons.'
+      );
+    }
+
     // Actually make the request
     const requestBody: any = {
       mediaType,
