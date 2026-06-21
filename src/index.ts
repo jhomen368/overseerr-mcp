@@ -1799,6 +1799,14 @@ class OverseerrServer {
       }
     }
 
+    // Guard: reject empty seasons before dry-run or real request — avoids silent success with no actual request
+    if (mediaType === 'tv' && (!expandedSeasons || expandedSeasons.length === 0)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'No valid seasons specified. Use seasons: [1, 2, 3] for specific seasons or seasons: "all" for all seasons.'
+      );
+    }
+
     // Get media title with caching
     const details = await this.getMediaDetails(mediaType!, mediaId!);
     let mediaTitle: string;
