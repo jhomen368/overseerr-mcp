@@ -18,6 +18,9 @@ COPY src ./src
 # Build TypeScript
 RUN npm run build
 
+# Prune to production-only deps in builder (avoids npm existing in production image)
+RUN npm ci --omit=dev
+
 # Production stage
 FROM node:26-alpine
 
@@ -28,14 +31,13 @@ WORKDIR /app
 RUN apk upgrade --no-cache && \
     apk add --no-cache dumb-init
 
-# Copy package files
-COPY package*.json ./
+# Remove npm — not needed at runtime, eliminates its bundled CVE surface
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
 
-# Install production dependencies only
-RUN npm ci --omit=dev && \
-    npm cache clean --force
-
-# Copy built files from builder
+# Copy production node_modules and built files from builder
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/build ./build
 
 # Create a non-root user
