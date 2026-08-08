@@ -25,8 +25,11 @@ jobs:
           node-version: '22'
           cache: 'npm'
       
+      - name: Sync lock file
+        run: npm install --package-lock-only
+
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       
       - name: Run npm audit
         run: npm audit --audit-level=moderate
