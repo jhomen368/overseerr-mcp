@@ -95,8 +95,10 @@ function classifyTvSeason(mediaInfo: MediaInfo, seasonNumber: number): Classifie
 function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): ClassifierResult {
   const { showSeasons, requestedSeasons } = options;
 
-  // Show tracked at show level (status 2–5 means it is already in the system)
-  if (isTracked(mediaInfo.status)) {
+  // Show tracked at show level — only applies when no explicit seasons are targeted.
+  // With requestedSeasons present, the per-season checks below are authoritative;
+  // a PARTIALLY_AVAILABLE show (status 4) should not block an untracked target season.
+  if (isTracked(mediaInfo.status) && (!requestedSeasons || requestedSeasons.length === 0)) {
     return blocked('ALREADY_AVAILABLE', 'Already in library (show-level)');
   }
 

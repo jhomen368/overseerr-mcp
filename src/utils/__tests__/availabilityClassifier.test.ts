@@ -130,6 +130,25 @@ test('tv no season: show pending (status 2) → ALREADY_AVAILABLE', () => {
   assert.equal(result.reasonCode, 'ALREADY_AVAILABLE');
 });
 
+test('tv no season: partially available show (status 4) + untracked requestedSeason → AVAILABLE_FOR_REQUEST', () => {
+  // Regression: show-level isTracked(4) must not block when explicit requestedSeasons
+  // are provided and the target season is not yet tracked.
+  const result = classifyAvailability(
+    makeMediaInfo({
+      status: 4,
+      seasons: [{ id: 1, seasonNumber: 1, status: 5, createdAt: '', updatedAt: '' }],
+    }),
+    'tv',
+    null,
+    {
+      showSeasons: [{ seasonNumber: 1 }, { seasonNumber: 2 }],
+      requestedSeasons: [2],
+    }
+  );
+  assert.equal(result.status, 'pass');
+  assert.equal(result.reasonCode, 'AVAILABLE_FOR_REQUEST');
+});
+
 test('tv no season: show-level request (no seasons on request) → ALREADY_REQUESTED', () => {
   const result = classifyAvailability(
     makeMediaInfo({ requests: [makeRequest(/* no seasons */)] }),
