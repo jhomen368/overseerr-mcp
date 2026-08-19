@@ -144,10 +144,8 @@ function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): Class
       }
     }
   } else {
-    // Fallback: no seasons data — use show-level status
-    if (isTracked(mediaInfo.status)) {
-      return blocked('ALREADY_AVAILABLE', `Already in library (${label(mediaInfo.status).toLowerCase()})`);
-    }
+    // Fallback: no showSeasons data — check requests only (show-level status already
+    // handled at the top of this function, so isTracked would be false here)
     if (mediaInfo.requests && mediaInfo.requests.length > 0) {
       return blocked('ALREADY_REQUESTED', 'Already requested');
     }
@@ -166,7 +164,7 @@ function blocked(reasonCode: ReasonCode, reason: string): ClassifierResult {
   return { status: 'blocked', reasonCode, reason };
 }
 
-function trackedSeasonNumbers(mediaInfo: MediaInfo): number[] {
+export function trackedSeasonNumbers(mediaInfo: MediaInfo): number[] {
   return (
     mediaInfo.seasons
       ?.filter(s => s.seasonNumber > 0 && isTracked(s.status))

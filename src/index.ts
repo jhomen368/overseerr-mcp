@@ -14,8 +14,7 @@ import { SeerrApiClient } from './utils/seerrClient.js';
 import { VERSION } from './version.js';
 import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch } from './utils/normalize.js';
 import { batchWithRetry } from './utils/retry.js';
-import { classifyAvailability } from './utils/availabilityClassifier.js';
-import { isTracked } from './utils/mediaStatus.js';
+import { classifyAvailability, trackedSeasonNumbers } from './utils/availabilityClassifier.js';
 import {
   SearchResult,
   SearchResultItem,
@@ -862,8 +861,8 @@ class OverseerrServer {
           if (!doesSeasonExist(details, seasonNumber)) {
             console.error(`[WARN] Season ${seasonNumber} not found in seasons data for "${bestMatch.title || bestMatch.name}". Trying alternates...`);
             let foundValid = false;
-            for (const alternate of alternates) {
-              if (alternate.mediaType !== 'tv') continue;
+            const tvAlternates = alternates.filter(a => a.mediaType === 'tv').slice(0, 3);
+            for (const alternate of tvAlternates) {
               const altDetails = await this.client.getMediaDetails('tv', alternate.id);
               if (doesSeasonExist(altDetails, seasonNumber)) {
                 console.error(`[INFO] Found valid alternate: "${alternate.title || alternate.name}" for season ${seasonNumber}`);
@@ -911,10 +910,7 @@ class OverseerrServer {
           if (seasonNumber !== null) {
             franchiseInfo = `Season ${seasonNumber} of ${showName}`;
           } else {
-            const availableNums = details.mediaInfo?.seasons
-              ?.filter(s => s.seasonNumber > 0 && isTracked(s.status))
-              .map(s => s.seasonNumber)
-              .sort((a, b) => a - b) ?? [];
+            const availableNums = details.mediaInfo ? trackedSeasonNumbers(details.mediaInfo) : [];
             const requestedNums = details.mediaInfo?.requests
               ?.flatMap(req => req.media.seasons?.filter(s => s.seasonNumber > 0).map(s => s.seasonNumber) ?? [])
               .filter((n, i, arr) => arr.indexOf(n) === i)

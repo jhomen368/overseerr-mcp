@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyAvailability } from '../availabilityClassifier.js';
-import type { MediaInfo } from '../../types.js';
+import type { MediaInfo, MediaRequest } from '../../types.js';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ function makeMediaInfo(overrides: Partial<MediaInfo> = {}): MediaInfo {
   };
 }
 
-function makeRequest(seasonNumbers?: number[]) {
+function makeRequest(seasonNumbers?: number[]): MediaRequest {
   return {
     id: 99,
     status: 2,
@@ -257,4 +257,25 @@ test('tv + seasonNumber SEASON_AVAILABLE reason mentions season number', () => {
     4
   );
   assert.ok(result.reason?.includes('4'), `expected "4" in "${result.reason}"`);
+});
+
+// ── no-showSeasons fallback ───────────────────────────────────────────────────
+
+test('tv no season, no showSeasons, has season-scoped request → ALREADY_REQUESTED', () => {
+  // When showSeasons is omitted the classifier falls back to checking requests directly.
+  // A populated requests array (with season scope) should block as ALREADY_REQUESTED.
+  const result = classifyAvailability(
+    makeMediaInfo({ requests: [makeRequest([1])] }),
+    'tv',
+    null
+    // options omitted — no showSeasons
+  );
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reasonCode, 'ALREADY_REQUESTED');
+});
+
+test('tv no season, no showSeasons, no requests → AVAILABLE_FOR_REQUEST', () => {
+  const result = classifyAvailability(makeMediaInfo(), 'tv', null);
+  assert.equal(result.status, 'pass');
+  assert.equal(result.reasonCode, 'AVAILABLE_FOR_REQUEST');
 });
