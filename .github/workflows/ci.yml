@@ -38,6 +38,9 @@ jobs:
       - name: TypeScript Build
         run: npm run build
       
+      - name: Run unit tests
+        run: node --test --test-reporter=spec build/utils/__tests__/*.test.js
+      
       - name: Verify build output
         run: |
           test -f build/index.js || (echo "❌ build/index.js not found" && exit 1)

@@ -63,6 +63,7 @@
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "watch": "tsc --watch",
+    "test": "npm run build && node --test --test-reporter=spec build/utils/__tests__/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
