@@ -212,12 +212,21 @@ export interface ServiceDetailsResponse {
 }
 
 // Tool output types
+export type ReasonCode =
+  | 'NOT_FOUND'
+  | 'ALREADY_AVAILABLE'
+  | 'ALREADY_REQUESTED'
+  | 'SEASON_AVAILABLE'
+  | 'SEASON_REQUESTED'
+  | 'SEASON_NOT_FOUND'
+  | 'AVAILABLE_FOR_REQUEST';
+
 export interface DedupeResult {
   title: string;
   id: number;
   mediaType?: 'movie' | 'tv';  // Added to track type for autoRequest
   status: 'pass' | 'blocked';
-  reasonCode: 'NOT_FOUND' | 'ALREADY_AVAILABLE' | 'ALREADY_REQUESTED' | 'SEASON_AVAILABLE' | 'SEASON_REQUESTED' | 'SEASON_NOT_FOUND' | 'AVAILABLE_FOR_REQUEST';
+  reasonCode: ReasonCode;
   isActionable: boolean;
   reason?: string;
   franchiseInfo?: string;
