@@ -1731,7 +1731,7 @@ class OverseerrServer {
         };
       }
 
-      if (mediaInfo?.status === 5) { // AVAILABLE
+      if (mediaInfo?.status != null && [2, 3, 4, 5].includes(mediaInfo.status)) { // PENDING, PROCESSING, PARTIALLY_AVAILABLE, or AVAILABLE
         return {
           content: [
             {
