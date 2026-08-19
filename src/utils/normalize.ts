@@ -21,8 +21,7 @@ export function normalizeTitle(title: string): string {
     /\s*Part\s+\d+/gi,
     /\s*Cour\s+\d+/gi,
     /\s*\d+(?:st|nd|rd|th)\s+Season/gi,
-    /\s*Final\s+Season/gi,
-    /\s*The\s+Final\s+Season/gi,
+    /\s*(?:The\s+)?Final\s+Season/gi,
     /\s*\(Season\s+\d+\)/gi,
     /\s*\(\d+(?:st|nd|rd|th)\s+Season\)/gi,
   ];
