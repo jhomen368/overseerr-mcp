@@ -63,9 +63,9 @@ export class SeerrApiClient {
     this.cache = cache ?? new CacheManager();
   }
 
-  /** Expose cache for stats endpoint and health checks. */
-  getCache(): CacheManager {
-    return this.cache;
+  /** Returns cache statistics for the health/stats endpoint. */
+  getCacheStats(): ReturnType<CacheManager['getStats']> {
+    return this.cache.getStats();
   }
 
   // ── Search ──────────────────────────────────────────────────────────────────

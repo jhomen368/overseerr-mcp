@@ -10,7 +10,6 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
-import { CacheManager } from './utils/cache.js';
 import { SeerrApiClient } from './utils/seerrClient.js';
 import { VERSION } from './version.js';
 import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch } from './utils/normalize.js';
@@ -190,7 +189,6 @@ if (!keyValidation.valid) {
 
 class OverseerrServer {
   private server: Server;
-  private cache: CacheManager;
   private client: SeerrApiClient;
 
   constructor() {
@@ -207,7 +205,6 @@ class OverseerrServer {
     );
 
     this.client = new SeerrApiClient(SEERR_URL!, SEERR_API_KEY!);
-    this.cache = this.client.getCache();
     this.setupToolHandlers();
 
     this.server.onerror = (error: Error) => console.error('[MCP Error]', error);
@@ -2238,7 +2235,7 @@ class OverseerrServer {
     });
 
     app.get('/cache/stats', (_req: any, res: any) => {
-      res.json(this.cache.getStats());
+      res.json(this.client.getCacheStats());
     });
 
     const MAX_SESSIONS = 100;
