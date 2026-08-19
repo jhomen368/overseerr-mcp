@@ -84,7 +84,7 @@ export class SeerrApiClient {
     const encodedQuery = encodeSearchQuery(query);
     const response = await withRetry(() =>
       this.http.get<SearchResult>(
-        `/search?query=${encodedQuery}&page=${page}&language=${language}`
+        `/search?query=${encodedQuery}&page=${page}&language=${encodeURIComponent(language)}`
       )
     );
     this.cache.set('search', cacheKey, response.data);
@@ -186,16 +186,19 @@ export class SeerrApiClient {
   async approveRequest(id: number): Promise<void> {
     await this.http.post(`/request/${id}/approve`);
     this.cache.invalidate('requests');
+    this.cache.invalidate('mediaDetails');
   }
 
   async declineRequest(id: number): Promise<void> {
     await this.http.post(`/request/${id}/decline`);
     this.cache.invalidate('requests');
+    this.cache.invalidate('mediaDetails');
   }
 
   async deleteRequest(id: number): Promise<void> {
     await this.http.delete(`/request/${id}`);
     this.cache.invalidate('requests');
+    this.cache.invalidate('mediaDetails');
   }
 
   // ── Services ─────────────────────────────────────────────────────────────────
