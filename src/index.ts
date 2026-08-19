@@ -11,6 +11,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios, { AxiosInstance } from 'axios';
 import { CacheManager } from './utils/cache.js';
+import { SeerrApiClient } from './utils/seerrClient.js';
 import { VERSION } from './version.js';
 import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch, encodeSearchQuery } from './utils/normalize.js';
 import { withRetry, batchWithRetry } from './utils/retry.js';
@@ -191,6 +192,7 @@ class OverseerrServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
   private cache: CacheManager;
+  private client: SeerrApiClient;
 
   constructor() {
     this.server = new Server(
@@ -213,7 +215,8 @@ class OverseerrServer {
       },
     });
 
-    this.cache = new CacheManager();
+    this.client = new SeerrApiClient(SEERR_URL!, SEERR_API_KEY!);
+    this.cache = this.client.getCache();
     this.setupToolHandlers();
 
     this.server.onerror = (error: Error) => console.error('[MCP Error]', error);
@@ -1945,215 +1948,133 @@ class OverseerrServer {
       throw new McpError(ErrorCode.InvalidParams, 'requestId is required for get action');
     }
 
-    const cacheKey = { requestId: args.requestId };
-    let request = this.cache.get<MediaRequest>('requests', cacheKey);
-
-    if (!request) {
-      const response = await this.axiosInstance.get<MediaRequest>(
-        `/request/${args.requestId}`
-      );
-      request = response.data;
-      this.cache.set('requests', cacheKey, request);
-    }
+    const request = await this.client.getRequest(args.requestId);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            args.format === 'full' ? request : this.formatCompactRequest(request),
-            null,
-            2
-          ),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify(
+          args.format === 'full' ? request : this.formatCompactRequest(request),
+          null, 2
+        ),
+      }],
     };
   }
 
   private async handleListRequests(args: ManageRequestsArgs) {
     const { filter, take, skip, sort, summary } = args;
 
-    // If summary mode, fetch all results (don't use pagination)
     if (summary) {
-      const params: any = {
-        take: 1000, // Fetch large batch to get all/most results
-        skip: 0,
-        sort: sort || 'added',
-      };
-
-      if (filter && filter !== 'all') {
-        params.filter = filter;
-      }
-
-      // Don't cache summary queries as they need fresh data
-      const response = await this.axiosInstance.get('/request', { params });
-      const requests = response.data;
-
+      const data = await this.client.listAllRequests({ filter, sort });
       const statusCounts: Record<string, number> = {};
-      requests.results.forEach((r: MediaRequest) => {
+      data.results.forEach((r: MediaRequest) => {
         const status = this.getStatusString(r.status);
         statusCounts[status] = (statusCounts[status] || 0) + 1;
       });
 
       return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              total: requests.results.length,
-              statusBreakdown: statusCounts,
-              filter: filter || 'all',
-            }, null, 2),
-          },
-        ],
-      };
-    }
-
-    // Regular list mode - use pagination
-    const cacheKey = { filter, take, skip, sort };
-    let requests = this.cache.get<{ results: MediaRequest[]; pageInfo: any }>('requests', cacheKey);
-
-    if (!requests) {
-      const params: any = {
-        take: take || 20,
-        skip: skip || 0,
-        sort: sort || 'added',
-      };
-
-      if (filter && filter !== 'all') {
-        params.filter = filter;
-      }
-
-      const response = await this.axiosInstance.get('/request', { params });
-      requests = response.data;
-      this.cache.set('requests', cacheKey, requests);
-    }
-
-    const formatted = requests ? requests.results.map(r =>
-      args.format === 'full' ? r : this.formatCompactRequest(r)
-    ) : [];
-
-    return {
-      content: [
-        {
+        content: [{
           type: 'text',
           text: JSON.stringify({
-            results: formatted,
-            pageInfo: requests?.pageInfo,
+            total: data.results.length,
+            statusBreakdown: statusCounts,
+            filter: filter || 'all',
           }, null, 2),
-        },
-      ],
+        }],
+      };
+    }
+
+    const requests = await this.client.listRequests({ filter, take, skip, sort });
+    const formatted = requests.results.map(r =>
+      args.format === 'full' ? r : this.formatCompactRequest(r)
+    );
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: formatted,
+          pageInfo: requests.pageInfo,
+        }, null, 2),
+      }],
     };
   }
 
   private async handleApproveRequests(args: ManageRequestsArgs) {
     const ids = args.requestIds || (args.requestId ? [args.requestId] : []);
     if (ids.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'requestId or requestIds required for approve'
-      );
+      throw new McpError(ErrorCode.InvalidParams, 'requestId or requestIds required for approve');
     }
 
     const results = await batchWithRetry(ids, async (id) => {
-      await this.axiosInstance.post(`/request/${id}/approve`);
+      await this.client.approveRequest(id);
       return { id, status: 'APPROVED' };
     });
-
-    this.cache.invalidate('requests');
 
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: ids.length,
-              approved: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
-          }, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          summary: { total: ids.length, approved: successful.length, failed: failed.length },
+          results: successful.map(r => r.result),
+          errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
+        }, null, 2),
+      }],
     };
   }
 
   private async handleDeclineRequests(args: ManageRequestsArgs) {
     const ids = args.requestIds || (args.requestId ? [args.requestId] : []);
     if (ids.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'requestId or requestIds required for decline'
-      );
+      throw new McpError(ErrorCode.InvalidParams, 'requestId or requestIds required for decline');
     }
 
     const results = await batchWithRetry(ids, async (id) => {
-      await this.axiosInstance.post(`/request/${id}/decline`);
+      await this.client.declineRequest(id);
       return { id, status: 'DECLINED' };
     });
-
-    this.cache.invalidate('requests');
 
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: ids.length,
-              declined: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
-          }, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          summary: { total: ids.length, declined: successful.length, failed: failed.length },
+          results: successful.map(r => r.result),
+          errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
+        }, null, 2),
+      }],
     };
   }
 
   private async handleDeleteRequests(args: ManageRequestsArgs) {
     const ids = args.requestIds || (args.requestId ? [args.requestId] : []);
     if (ids.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'requestId or requestIds required for delete'
-      );
+      throw new McpError(ErrorCode.InvalidParams, 'requestId or requestIds required for delete');
     }
 
     const results = await batchWithRetry(ids, async (id) => {
-      await this.axiosInstance.delete(`/request/${id}`);
+      await this.client.deleteRequest(id);
       return { id, deleted: true };
     });
-
-    this.cache.invalidate('requests');
 
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: ids.length,
-              deleted: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
-          }, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          summary: { total: ids.length, deleted: successful.length, failed: failed.length },
+          results: successful.map(r => r.result),
+          errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
+        }, null, 2),
+      }],
     };
   }
 
@@ -2179,21 +2100,13 @@ class OverseerrServer {
   private async handleSingleDetails(args: GetDetailsArgs) {
     const { mediaType, mediaId, level, fields, language } = args;
 
-    const cacheKey = { mediaType, mediaId, language: language || 'en' };
-    let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
+    const details = await this.client.getMediaDetails(
+      mediaType!,
+      mediaId!,
+      { language }
+    );
+    details.mediaType = mediaType!;
 
-    if (!details) {
-      const params = language ? { language } : {};
-      const response = await this.axiosInstance.get<MediaDetails>(
-        `/${mediaType}/${mediaId}`,
-        { params }
-      );
-      details = response.data;
-      details.mediaType = mediaType!;
-      this.cache.set('mediaDetails', cacheKey, details);
-    }
-
-    // Apply level filtering
     const filtered = this.filterDetailsByLevel(details, level || 'standard', fields);
 
     return {
@@ -2212,22 +2125,12 @@ class OverseerrServer {
     const results = await batchWithRetry(
       items,
       async (item) => {
-        const cacheKey = { 
-          mediaType: item.mediaType, 
-          mediaId: item.mediaId,
-          language: args.language || 'en'
-        };
-        let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
-        if (!details) {
-          const response = await this.axiosInstance.get<MediaDetails>(
-            `/${item.mediaType}/${item.mediaId}`,
-            { params: args.language ? { language: args.language } : {} }
-          );
-          details = response.data;
-          details.mediaType = item.mediaType;
-          this.cache.set('mediaDetails', cacheKey, details);
-        }
-
+        const details = await this.client.getMediaDetails(
+          item.mediaType,
+          item.mediaId,
+          { language: args.language }
+        );
+        details.mediaType = item.mediaType;
         return this.filterDetailsByLevel(details, args.level || 'standard', args.fields);
       }
     );
@@ -2264,17 +2167,7 @@ class OverseerrServer {
 
     const servicesResult = await Promise.all(
       requestedServiceTypes.map(async (serviceType) => {
-        const cacheKey = { serviceType };
-        let services = this.cache.get<ServiceConfig[]>('services', cacheKey);
-
-        if (!services) {
-          const response = await this.axiosInstance.get<ServiceConfig[]>(
-            `/service/${serviceType}`
-          );
-          services = response.data;
-          this.cache.set('services', cacheKey, services);
-        }
-
+        const services = await this.client.listServices(serviceType);
         return services.map(service => ({ serviceType, ...service }));
       })
     );
@@ -2297,19 +2190,10 @@ class OverseerrServer {
       );
     }
 
-    const serviceType = args.serviceType;
-    const serverId = args.serverId ?? 0;
-
-    const cacheKey = { serviceType, serverId };
-    let profileData = this.cache.get<ServiceDetailsResponse>('serviceDetails', cacheKey);
-
-    if (!profileData) {
-      const response = await this.axiosInstance.get<ServiceDetailsResponse>(
-        `/service/${serviceType}/${serverId}`
-      );
-      profileData = response.data;
-      this.cache.set('serviceDetails', cacheKey, profileData);
-    }
+    const profileData = await this.client.getServiceDetails(
+      args.serviceType,
+      args.serverId ?? 0
+    );
 
     return {
       content: [
