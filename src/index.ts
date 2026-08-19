@@ -32,8 +32,6 @@ import {
   DedupeDetails,
   GetServicesArgs,
   GetServiceDetailsArgs,
-  ServiceConfig,
-  ServiceDetailsResponse,
 } from './types.js';
 
 // Field mapping for includeDetails feature
