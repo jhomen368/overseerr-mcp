@@ -9,7 +9,8 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import axios from 'axios';import { CacheManager } from './utils/cache.js';
+import axios from 'axios';
+import { CacheManager } from './utils/cache.js';
 import { SeerrApiClient } from './utils/seerrClient.js';
 import { VERSION } from './version.js';
 import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch } from './utils/normalize.js';

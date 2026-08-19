@@ -19,7 +19,7 @@ export async function withRetry<T>(
     backoffMs = [100, 500, 1000],
     shouldRetry = (error: any) => {
       // Retry on network errors, timeouts, and 5xx errors
-      if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') return true;
+      if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') return true;
       if (error.response?.status >= 500) return true;
       return false;
     },

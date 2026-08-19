@@ -55,6 +55,7 @@ export class SeerrApiClient {
         'X-Api-Key': apiKey,
         'Content-Type': 'application/json',
       },
+      timeout: 30_000,
     });
     this.cache = cache ?? new CacheManager();
   }
@@ -147,9 +148,11 @@ export class SeerrApiClient {
     const queryParams: Record<string, any> = { take, skip, sort };
     if (filter && filter !== 'all') queryParams.filter = filter;
 
-    const response = await this.http.get<{ results: MediaRequest[]; pageInfo: any }>(
-      '/request',
-      { params: queryParams }
+    const response = await withRetry(() =>
+      this.http.get<{ results: MediaRequest[]; pageInfo: any }>(
+        '/request',
+        { params: queryParams }
+      )
     );
     this.cache.set('requests', cacheKey, response.data);
     return response.data;
@@ -170,9 +173,11 @@ export class SeerrApiClient {
     };
     if (params?.filter && params.filter !== 'all') queryParams.filter = params.filter;
 
-    const response = await this.http.get<{ results: MediaRequest[] }>(
-      '/request',
-      { params: queryParams }
+    const response = await withRetry(() =>
+      this.http.get<{ results: MediaRequest[] }>(
+        '/request',
+        { params: queryParams }
+      )
     );
     return response.data;
   }
