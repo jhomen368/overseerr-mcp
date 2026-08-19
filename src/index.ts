@@ -9,11 +9,11 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import axios, { AxiosInstance } from 'axios';
-import { CacheManager } from './utils/cache.js';
+import axios from 'axios';
+import { SeerrApiClient } from './utils/seerrClient.js';
 import { VERSION } from './version.js';
-import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch, encodeSearchQuery } from './utils/normalize.js';
-import { withRetry, batchWithRetry } from './utils/retry.js';
+import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch } from './utils/normalize.js';
+import { batchWithRetry } from './utils/retry.js';
 import {
   SearchResult,
   SearchResultItem,
@@ -189,8 +189,7 @@ if (!keyValidation.valid) {
 
 class OverseerrServer {
   private server: Server;
-  private axiosInstance: AxiosInstance;
-  private cache: CacheManager;
+  private client: SeerrApiClient;
 
   constructor() {
     this.server = new Server(
@@ -205,15 +204,7 @@ class OverseerrServer {
       }
     );
 
-    this.axiosInstance = axios.create({
-      baseURL: `${SEERR_URL}/api/v1`,
-      headers: {
-        'X-Api-Key': SEERR_API_KEY,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    this.cache = new CacheManager();
+    this.client = new SeerrApiClient(SEERR_URL!, SEERR_API_KEY!);
     this.setupToolHandlers();
 
     this.server.onerror = (error: Error) => console.error('[MCP Error]', error);
@@ -754,27 +745,10 @@ class OverseerrServer {
 
   private async handleSingleSearch(args: SearchMediaArgs) {
     const query = args.query!;
-    const cacheKey = { query, page: args.page || 1, language: args.language || 'en' };
-    
-    // Check cache
-    const cached = this.cache.get<SearchResult>('search', cacheKey);
-    if (cached) {
-      return this.formatSearchResponse(cached, args.format || 'compact', args.limit);
-    }
-
-    // Search with retry - build URL manually with encoded query
-    const result = await withRetry(async () => {
-      const encodedQuery = encodeSearchQuery(query);
-      const page = args.page || 1;
-      const language = args.language || 'en';
-      const url = `/search?query=${encodedQuery}&page=${page}&language=${language}`;
-      const response = await this.axiosInstance.get<SearchResult>(url);
-      return response.data;
+    const result = await this.client.search(query, {
+      page: args.page || 1,
+      language: args.language || 'en',
     });
-
-    // Cache result
-    this.cache.set('search', cacheKey, result);
-
     return this.formatSearchResponse(result, args.format || 'compact', args.limit);
   }
 
@@ -784,18 +758,7 @@ class OverseerrServer {
     const results = await batchWithRetry(
       queries,
       async (query) => {
-        const cacheKey = { query, page: 1, language: args.language || 'en' };
-        const cached = this.cache.get<SearchResult>('search', cacheKey);
-        if (cached) return cached;
-
-        // Build URL manually with encoded query
-        const encodedQuery = encodeSearchQuery(query);
-        const language = args.language || 'en';
-        const url = `/search?query=${encodedQuery}&page=1&language=${language}`;
-        const response = await this.axiosInstance.get<SearchResult>(url);
-        const data = response.data;
-        this.cache.set('search', cacheKey, data);
-        return data;
+        return this.client.search(query, { page: 1, language: args.language || 'en' });
       }
     );
 
@@ -846,18 +809,11 @@ class OverseerrServer {
         const searchTitle = autoNormalize ? normalizeTitle(originalTitle) : originalTitle;
         const seasonNumber = extractSeasonNumber(originalTitle);
 
-        // Search for the title - build URL manually with encoded query
-        const cacheKey = { query: searchTitle, page: 1, language: args.language || 'en' };
-        let searchResult = this.cache.get<SearchResult>('search', cacheKey);
-        
-        if (!searchResult) {
-          const encodedQuery = encodeSearchQuery(searchTitle);
-          const language = args.language || 'en';
-          const url = `/search?query=${encodedQuery}&page=1&language=${language}`;
-          const response = await this.axiosInstance.get<SearchResult>(url);
-          searchResult = response.data;
-          this.cache.set('search', cacheKey, searchResult);
-        }
+        // Search for the title
+        let searchResult = await this.client.search(searchTitle, {
+          page: 1,
+          language: args.language || 'en',
+        });
 
         // If no results, it's NOT_FOUND — treated as blocked (cannot be requested)
         if (!searchResult.results || searchResult.results.length === 0) {
@@ -889,17 +845,7 @@ class OverseerrServer {
         // For season-specific queries, validate season number exists in matched series
         if (seasonNumber && bestMatch.mediaType === 'tv') {
           // Fetch details to check numberOfSeasons
-          const detailsCacheKey = { mediaType: 'tv', mediaId: bestMatch.id };
-          let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
-          
-          if (!details) {
-            const detailsResponse = await this.axiosInstance.get<MediaDetails>(
-              `/tv/${bestMatch.id}`
-            );
-            details = detailsResponse.data;
-            details.mediaType = 'tv';
-            this.cache.set('mediaDetails', detailsCacheKey, details);
-          }
+          let details = await this.client.getMediaDetails('tv', bestMatch.id);
           
           /**
            * Helper: check if a season number exists in media details
@@ -924,15 +870,7 @@ class OverseerrServer {
             for (const alternate of alternates) {
               if (alternate.mediaType !== 'tv') continue;
               
-              const altCacheKey = { mediaType: 'tv', mediaId: alternate.id };
-              let altDetails = this.cache.get<MediaDetails>('mediaDetails', altCacheKey);
-              
-              if (!altDetails) {
-                const altResponse = await this.axiosInstance.get<MediaDetails>(`/tv/${alternate.id}`);
-                altDetails = altResponse.data;
-                altDetails.mediaType = 'tv';
-                this.cache.set('mediaDetails', altCacheKey, altDetails);
-              }
+              let altDetails = await this.client.getMediaDetails('tv', alternate.id);
               
               // Use same helper for alternate validation
               if (doesSeasonExist(altDetails, seasonNumber)) {
@@ -973,18 +911,7 @@ class OverseerrServer {
         
         // Check if it's TV and we need details for season checking
         if (bestMatch.mediaType === 'tv') {
-          const detailsCacheKey = { mediaType: 'tv', mediaId: bestMatch.id };
-          let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
-          
-          if (!details) {
-            const detailsResponse = await this.axiosInstance.get<MediaDetails>(
-              `/tv/${bestMatch.id}`
-            );
-            details = detailsResponse.data;
-            // Add mediaType to details for enrichment
-            details.mediaType = 'tv';
-            this.cache.set('mediaDetails', detailsCacheKey, details);
-          }
+          let details = await this.client.getMediaDetails('tv', bestMatch.id);
 
           // Get media info for status checking
           const mediaInfo = details.mediaInfo;
@@ -1352,18 +1279,7 @@ class OverseerrServer {
           return baseResult;
         } else {
           // Movie - simpler check
-          const detailsCacheKey = { mediaType: 'movie', mediaId: bestMatch.id };
-          let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
-          
-          if (!details) {
-            const detailsResponse = await this.axiosInstance.get<MediaDetails>(
-              `/movie/${bestMatch.id}`
-            );
-            details = detailsResponse.data;
-            // Add mediaType to details for enrichment
-            details.mediaType = 'movie';
-            this.cache.set('mediaDetails', detailsCacheKey, details);
-          }
+          let details = await this.client.getMediaDetails('movie', bestMatch.id);
 
           const mediaInfo = details.mediaInfo;
           if (mediaInfo && mediaInfo.status) {
@@ -1514,8 +1430,7 @@ class OverseerrServer {
               // Expand "all" to actual season numbers (excluding season 0 - specials)
               let seasonsToRequest = item.seasons;
               if (item.mediaType === 'tv' && item.seasons === 'all') {
-                const detailsResponse = await this.axiosInstance.get<MediaDetails>(`/tv/${item.mediaId}`);
-                const details = detailsResponse.data;
+                const details = await this.client.getMediaDetails('tv', item.mediaId);
                 
                 // Get all regular seasons excluding season 0 (specials)
                 const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
@@ -1542,19 +1457,15 @@ class OverseerrServer {
               if (args.requestOptions?.profileId) requestBody.profileId = args.requestOptions.profileId;
               if (args.requestOptions?.rootFolder) requestBody.rootFolder = args.requestOptions.rootFolder;
 
-              const response = await this.axiosInstance.post('/request', requestBody);
-              
-              // Invalidate caches
-              this.cache.invalidate('requests');
-              this.cache.invalidate('mediaDetails');
+              const createdRequest = await this.client.createRequest(requestBody);
 
               return {
                 success: true,
-                requestId: response.data.id,
+                requestId: createdRequest.id,
                 mediaId: item.mediaId,
                 mediaType: item.mediaType,
                 seasons: seasonsToRequest,
-                status: response.data.status
+                status: createdRequest.status
               };
             } catch (error: any) {
               return {
@@ -1611,21 +1522,6 @@ class OverseerrServer {
     };
   }
 
-  private async getMediaDetails(mediaType: string, mediaId: number): Promise<MediaDetails> {
-    const cacheKey = { mediaType, mediaId };
-    let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
-
-    if (!details) {
-      const response = await withRetry(async () => {
-        return await this.axiosInstance.get<MediaDetails>(`/${mediaType}/${mediaId}`);
-      });
-      details = response.data;
-      this.cache.set('mediaDetails', cacheKey, details);
-    }
-
-    return details;
-  }
-
   private async handleRequestMedia(args: any) {
     const requestArgs = args as RequestMediaArgs;
 
@@ -1660,7 +1556,7 @@ class OverseerrServer {
     let expandedSeasons: number[] | undefined = undefined;
     if (mediaType === 'tv' && seasons) {
       if (seasons === 'all') {
-        const details = await this.getMediaDetails(mediaType, mediaId!);
+        const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
         
         // Get all regular seasons (exclude season 0 - specials)
         const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
@@ -1698,16 +1594,7 @@ class OverseerrServer {
 
     // Validate first if requested
     if (validateFirst) {
-      const detailsCacheKey = { mediaType, mediaId };
-      let details = this.cache.get<MediaDetails>('mediaDetails', detailsCacheKey);
-      
-      if (!details) {
-        const response = await this.axiosInstance.get<MediaDetails>(
-          `/${mediaType}/${mediaId}`
-        );
-        details = response.data;
-        this.cache.set('mediaDetails', detailsCacheKey, details);
-      }
+      const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
 
       const mediaInfo = details.mediaInfo;
       if (mediaInfo?.requests && mediaInfo.requests.length > 0) {
@@ -1753,7 +1640,7 @@ class OverseerrServer {
       
       if (requireConfirm) {
         // Get details to calculate episode count
-        const details = await this.getMediaDetails(mediaType, mediaId!);
+        const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
 
         const totalSeasons = details.numberOfSeasons || 0;
         const seasonsToRequest = expandedSeasons;
@@ -1808,7 +1695,7 @@ class OverseerrServer {
     }
 
     // Get media title with caching
-    const details = await this.getMediaDetails(mediaType!, mediaId!);
+    const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
     let mediaTitle: string;
     mediaTitle = details.title ?? details.name ?? 'Unknown Media';
 
@@ -1850,13 +1737,7 @@ class OverseerrServer {
     if (args.profileId) requestBody.profileId = args.profileId;
     if (args.rootFolder) requestBody.rootFolder = args.rootFolder;
 
-    const response = await withRetry(async () => {
-      return await this.axiosInstance.post('/request', requestBody);
-    });
-
-    // Invalidate caches
-    this.cache.invalidate('requests');
-    this.cache.invalidate('mediaDetails');
+    const createdRequest = await this.client.createRequest(requestBody);
 
     return {
       content: [
@@ -1864,10 +1745,10 @@ class OverseerrServer {
           type: 'text',
           text: JSON.stringify({
             success: true,
-            requestId: response.data.id,
-            status: this.getStatusString(response.data.status),
+            requestId: createdRequest.id,
+            status: this.getStatusString(createdRequest.status),
             message: `Successfully requested ${mediaTitle}`,
-            seasonsRequested: response.data.seasons?.map((s: any) => s.seasonNumber),
+            seasonsRequested: createdRequest.seasons?.map((s: any) => s.seasonNumber),
           }, null, 2),
         },
       ],
@@ -1945,215 +1826,133 @@ class OverseerrServer {
       throw new McpError(ErrorCode.InvalidParams, 'requestId is required for get action');
     }
 
-    const cacheKey = { requestId: args.requestId };
-    let request = this.cache.get<MediaRequest>('requests', cacheKey);
-
-    if (!request) {
-      const response = await this.axiosInstance.get<MediaRequest>(
-        `/request/${args.requestId}`
-      );
-      request = response.data;
-      this.cache.set('requests', cacheKey, request);
-    }
+    const request = await this.client.getRequest(args.requestId);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            args.format === 'full' ? request : this.formatCompactRequest(request),
-            null,
-            2
-          ),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify(
+          args.format === 'full' ? request : this.formatCompactRequest(request),
+          null, 2
+        ),
+      }],
     };
   }
 
   private async handleListRequests(args: ManageRequestsArgs) {
     const { filter, take, skip, sort, summary } = args;
 
-    // If summary mode, fetch all results (don't use pagination)
     if (summary) {
-      const params: any = {
-        take: 1000, // Fetch large batch to get all/most results
-        skip: 0,
-        sort: sort || 'added',
-      };
-
-      if (filter && filter !== 'all') {
-        params.filter = filter;
-      }
-
-      // Don't cache summary queries as they need fresh data
-      const response = await this.axiosInstance.get('/request', { params });
-      const requests = response.data;
-
+      const data = await this.client.listAllRequests({ filter, sort });
       const statusCounts: Record<string, number> = {};
-      requests.results.forEach((r: MediaRequest) => {
+      data.results.forEach((r: MediaRequest) => {
         const status = this.getStatusString(r.status);
         statusCounts[status] = (statusCounts[status] || 0) + 1;
       });
 
       return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              total: requests.results.length,
-              statusBreakdown: statusCounts,
-              filter: filter || 'all',
-            }, null, 2),
-          },
-        ],
-      };
-    }
-
-    // Regular list mode - use pagination
-    const cacheKey = { filter, take, skip, sort };
-    let requests = this.cache.get<{ results: MediaRequest[]; pageInfo: any }>('requests', cacheKey);
-
-    if (!requests) {
-      const params: any = {
-        take: take || 20,
-        skip: skip || 0,
-        sort: sort || 'added',
-      };
-
-      if (filter && filter !== 'all') {
-        params.filter = filter;
-      }
-
-      const response = await this.axiosInstance.get('/request', { params });
-      requests = response.data;
-      this.cache.set('requests', cacheKey, requests);
-    }
-
-    const formatted = requests ? requests.results.map(r =>
-      args.format === 'full' ? r : this.formatCompactRequest(r)
-    ) : [];
-
-    return {
-      content: [
-        {
+        content: [{
           type: 'text',
           text: JSON.stringify({
-            results: formatted,
-            pageInfo: requests?.pageInfo,
+            total: data.results.length,
+            statusBreakdown: statusCounts,
+            filter: filter || 'all',
           }, null, 2),
-        },
-      ],
+        }],
+      };
+    }
+
+    const requests = await this.client.listRequests({ filter, take, skip, sort });
+    const formatted = requests.results.map(r =>
+      args.format === 'full' ? r : this.formatCompactRequest(r)
+    );
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: formatted,
+          pageInfo: requests.pageInfo,
+        }, null, 2),
+      }],
     };
   }
 
   private async handleApproveRequests(args: ManageRequestsArgs) {
     const ids = args.requestIds || (args.requestId ? [args.requestId] : []);
     if (ids.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'requestId or requestIds required for approve'
-      );
+      throw new McpError(ErrorCode.InvalidParams, 'requestId or requestIds required for approve');
     }
 
     const results = await batchWithRetry(ids, async (id) => {
-      await this.axiosInstance.post(`/request/${id}/approve`);
+      await this.client.approveRequest(id);
       return { id, status: 'APPROVED' };
     });
-
-    this.cache.invalidate('requests');
 
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: ids.length,
-              approved: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
-          }, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          summary: { total: ids.length, approved: successful.length, failed: failed.length },
+          results: successful.map(r => r.result),
+          errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
+        }, null, 2),
+      }],
     };
   }
 
   private async handleDeclineRequests(args: ManageRequestsArgs) {
     const ids = args.requestIds || (args.requestId ? [args.requestId] : []);
     if (ids.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'requestId or requestIds required for decline'
-      );
+      throw new McpError(ErrorCode.InvalidParams, 'requestId or requestIds required for decline');
     }
 
     const results = await batchWithRetry(ids, async (id) => {
-      await this.axiosInstance.post(`/request/${id}/decline`);
+      await this.client.declineRequest(id);
       return { id, status: 'DECLINED' };
     });
-
-    this.cache.invalidate('requests');
 
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: ids.length,
-              declined: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
-          }, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          summary: { total: ids.length, declined: successful.length, failed: failed.length },
+          results: successful.map(r => r.result),
+          errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
+        }, null, 2),
+      }],
     };
   }
 
   private async handleDeleteRequests(args: ManageRequestsArgs) {
     const ids = args.requestIds || (args.requestId ? [args.requestId] : []);
     if (ids.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'requestId or requestIds required for delete'
-      );
+      throw new McpError(ErrorCode.InvalidParams, 'requestId or requestIds required for delete');
     }
 
     const results = await batchWithRetry(ids, async (id) => {
-      await this.axiosInstance.delete(`/request/${id}`);
+      await this.client.deleteRequest(id);
       return { id, deleted: true };
     });
-
-    this.cache.invalidate('requests');
 
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: ids.length,
-              deleted: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
-          }, null, 2),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          summary: { total: ids.length, deleted: successful.length, failed: failed.length },
+          results: successful.map(r => r.result),
+          errors: failed.map(r => ({ id: r.item, error: r.error?.message })),
+        }, null, 2),
+      }],
     };
   }
 
@@ -2179,21 +1978,13 @@ class OverseerrServer {
   private async handleSingleDetails(args: GetDetailsArgs) {
     const { mediaType, mediaId, level, fields, language } = args;
 
-    const cacheKey = { mediaType, mediaId, language: language || 'en' };
-    let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
+    const details = await this.client.getMediaDetails(
+      mediaType!,
+      mediaId!,
+      { language }
+    );
+    details.mediaType = mediaType!;
 
-    if (!details) {
-      const params = language ? { language } : {};
-      const response = await this.axiosInstance.get<MediaDetails>(
-        `/${mediaType}/${mediaId}`,
-        { params }
-      );
-      details = response.data;
-      details.mediaType = mediaType!;
-      this.cache.set('mediaDetails', cacheKey, details);
-    }
-
-    // Apply level filtering
     const filtered = this.filterDetailsByLevel(details, level || 'standard', fields);
 
     return {
@@ -2212,22 +2003,12 @@ class OverseerrServer {
     const results = await batchWithRetry(
       items,
       async (item) => {
-        const cacheKey = { 
-          mediaType: item.mediaType, 
-          mediaId: item.mediaId,
-          language: args.language || 'en'
-        };
-        let details = this.cache.get<MediaDetails>('mediaDetails', cacheKey);
-        if (!details) {
-          const response = await this.axiosInstance.get<MediaDetails>(
-            `/${item.mediaType}/${item.mediaId}`,
-            { params: args.language ? { language: args.language } : {} }
-          );
-          details = response.data;
-          details.mediaType = item.mediaType;
-          this.cache.set('mediaDetails', cacheKey, details);
-        }
-
+        const details = await this.client.getMediaDetails(
+          item.mediaType,
+          item.mediaId,
+          { language: args.language }
+        );
+        details.mediaType = item.mediaType;
         return this.filterDetailsByLevel(details, args.level || 'standard', args.fields);
       }
     );
@@ -2264,17 +2045,7 @@ class OverseerrServer {
 
     const servicesResult = await Promise.all(
       requestedServiceTypes.map(async (serviceType) => {
-        const cacheKey = { serviceType };
-        let services = this.cache.get<ServiceConfig[]>('services', cacheKey);
-
-        if (!services) {
-          const response = await this.axiosInstance.get<ServiceConfig[]>(
-            `/service/${serviceType}`
-          );
-          services = response.data;
-          this.cache.set('services', cacheKey, services);
-        }
-
+        const services = await this.client.listServices(serviceType);
         return services.map(service => ({ serviceType, ...service }));
       })
     );
@@ -2297,19 +2068,10 @@ class OverseerrServer {
       );
     }
 
-    const serviceType = args.serviceType;
-    const serverId = args.serverId ?? 0;
-
-    const cacheKey = { serviceType, serverId };
-    let profileData = this.cache.get<ServiceDetailsResponse>('serviceDetails', cacheKey);
-
-    if (!profileData) {
-      const response = await this.axiosInstance.get<ServiceDetailsResponse>(
-        `/service/${serviceType}/${serverId}`
-      );
-      profileData = response.data;
-      this.cache.set('serviceDetails', cacheKey, profileData);
-    }
+    const profileData = await this.client.getServiceDetails(
+      args.serviceType,
+      args.serverId ?? 0
+    );
 
     return {
       content: [
@@ -2473,7 +2235,7 @@ class OverseerrServer {
     });
 
     app.get('/cache/stats', (_req: any, res: any) => {
-      res.json(this.cache.getStats());
+      res.json(this.client.getCacheStats());
     });
 
     const MAX_SESSIONS = 100;
