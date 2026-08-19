@@ -37,8 +37,11 @@ export interface CreatedRequest {
  * Typed client for the Seerr API.
  *
  * Hides all HTTP, cache, and retry concerns from the tool handlers.
- * Every method applies withRetry internally; cache key construction
- * and invalidation are a single responsibility of this module.
+ * Read-only GET methods apply withRetry internally; mutation methods
+ * (POST/DELETE) are intentionally not retried to avoid replaying
+ * non-idempotent operations on transient failures.
+ * Cache key construction and invalidation are a single responsibility
+ * of this module.
  *
  * mediaDetails cache keys always include language (default 'en') for
  * consistency — previous callers were split between keying with and
@@ -112,9 +115,7 @@ export class SeerrApiClient {
   // ── Requests ─────────────────────────────────────────────────────────────────
 
   async createRequest(body: CreateRequestBody): Promise<CreatedRequest> {
-    const response = await withRetry(() =>
-      this.http.post<CreatedRequest>('/request', body)
-    );
+    const response = await this.http.post<CreatedRequest>('/request', body);
     this.cache.invalidate('requests');
     this.cache.invalidate('mediaDetails');
     return response.data;
@@ -183,17 +184,17 @@ export class SeerrApiClient {
   }
 
   async approveRequest(id: number): Promise<void> {
-    await withRetry(() => this.http.post(`/request/${id}/approve`));
+    await this.http.post(`/request/${id}/approve`);
     this.cache.invalidate('requests');
   }
 
   async declineRequest(id: number): Promise<void> {
-    await withRetry(() => this.http.post(`/request/${id}/decline`));
+    await this.http.post(`/request/${id}/decline`);
     this.cache.invalidate('requests');
   }
 
   async deleteRequest(id: number): Promise<void> {
-    await withRetry(() => this.http.delete(`/request/${id}`));
+    await this.http.delete(`/request/${id}`);
     this.cache.invalidate('requests');
   }
 
