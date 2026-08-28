@@ -1,3 +1,22 @@
+## [2.3.0] - 2026-08-28
+
+### Added
+- **Unit test layer**: Added 51 assertions covering availability classification, media status helpers, and title normalization, with the suite now running in CI
+
+### Fixed
+- **Duplicate request validation**: `validateFirst` now blocks requests for media in pending, processing, partially available, and available states
+- **Season request validation**: Empty season arrays are rejected before dry-run handling or API calls
+- **Season availability checks**: Explicitly requested seasons are evaluated individually instead of being blocked by show-level tracking alone
+- **API cache consistency**: Media details are invalidated after request approval, decline, and deletion
+- **API request safety**: Mutation requests are no longer retried, avoiding duplicate side effects; search language values are URL-encoded
+
+### Changed
+- **Seerr API client**: Replaced raw API calls with a typed `SeerrApiClient` that centralizes caching, retry behavior, and request handling
+- **Availability classification**: Extracted availability decisions from dedupe processing into a focused classifier
+- **Docker image**: Production dependencies are prepared in the builder stage, and npm is removed from the runtime image to reduce its CVE exposure
+- **CI**: Upgraded release jobs to Node.js 22, added unit tests, hardened lockfile handling, and removed redundant CodeQL build steps
+- **Dependencies**: Updated Axios to 1.19.0, TypeScript to 7.0.2, Node.js types to 26.2.0, Commitlint to 21.2.2, and related transitive packages
+
 ## [2.2.0] - 2026-06-05
 
 ### Added
