@@ -67,8 +67,8 @@ const FIELD_MAP: Record<string, FieldMapper> = {
 
   // Availability info (from mediaInfo)
   'mediaStatus': (item, details, is4k) => details.mediaInfo ? statusForQuality(details.mediaInfo, is4k) : undefined,
-  'hasRequests': (item, details, is4k = false) => details.mediaInfo?.requests?.some(req => (req.is4k ?? false) === is4k) ?? false,
-  'requestCount': (item, details, is4k = false) => details.mediaInfo?.requests?.filter(req => (req.is4k ?? false) === is4k).length || 0,
+  'hasRequests': (item, details, is4k = false) => details.mediaInfo?.requests?.some(req => isActiveRequest(req, is4k)) ?? false,
+  'requestCount': (item, details, is4k = false) => details.mediaInfo?.requests?.filter(req => isActiveRequest(req, is4k)).length || 0,
 };
 
 /**

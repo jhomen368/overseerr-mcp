@@ -439,6 +439,34 @@ test('search_media: auto-request reports only the seasons actually accepted upst
   }, { acceptedSeasons: [2] });
 });
 
+test('search_media: request counts exclude inactive and mismatched-quality requests in every mode', async () => {
+  const details: any = showDetails();
+  const request = details.mediaInfo.requests[0];
+  details.mediaInfo.requests = [
+    { ...request, id: 1, status: 3 },
+    { ...request, id: 2, status: 5 },
+    { ...request, id: 3, status: 3, is4k: true },
+    { ...request, id: 4, status: 5, is4k: true },
+    { ...request, id: 5, status: 2, is4k: true },
+  ];
+  await withTools(details, async call => {
+    const includeDetails = { fields: ['hasRequests', 'requestCount'] };
+    const single = await call('search_media', { query: 'MF Ghost', includeDetails });
+    const batch = await call('search_media', { queries: ['MF Ghost'], includeDetails });
+    for (const item of [single.results[0], batch.results[0].results[0]]) {
+      assert.equal(item.details.hasRequests, false);
+      assert.equal(item.details.requestCount, 0);
+    }
+    for (const is4k of [false, true]) {
+      const dedupe = await call('search_media', {
+        dedupeMode: true, titles: ['MF Ghost'], requestOptions: { is4k }, includeDetails,
+      });
+      assert.equal(dedupe.results[0].details.hasRequests, is4k);
+      assert.equal(dedupe.results[0].details.requestCount, is4k ? 1 : 0);
+    }
+  });
+});
+
 test('search_media: 4K verdict, season details, request counts, and franchise info agree', async () => {
   const details: any = showDetails();
   details.mediaInfo.status4k = 4;
