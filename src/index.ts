@@ -1677,6 +1677,10 @@ class OverseerrServer {
       const isMedia = item.mediaType === 'movie' || item.mediaType === 'tv';
       const details = isMedia && (args.checkAvailability || fields.length > 0)
         ? await this.client.getMediaDetails(item.mediaType as 'movie' | 'tv', item.id, { language: args.language })
+            .catch(() => {
+              console.error(`[WARN] Details lookup failed for ${item.mediaType} ${item.id}; returning the search hit without enrichment`);
+              return undefined;
+            })
         : undefined;
       const enrichedItem = details ? { ...item, mediaInfo: details.mediaInfo } : item;
       const formatted = (args.format || 'compact') === 'compact'

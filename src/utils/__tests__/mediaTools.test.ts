@@ -37,7 +37,7 @@ function showDetails() {
 async function withTools(
   details: any,
   run: (call: (name: string, args: Record<string, unknown>) => Promise<any>, posts: any[]) => Promise<void>,
-  options: { acceptedSeasons?: number[]; requestStatus?: number } = {},
+  options: { acceptedSeasons?: number[]; requestStatus?: number; searchResults?: any[] } = {},
 ) {
   const posts: any[] = [];
   const api = createServer(async (req, res) => {
@@ -46,9 +46,9 @@ async function withTools(
     if (req.method === 'GET' && ['/api/v1/tv/154526', '/api/v1/movie/154526'].includes(url.pathname)) {
       res.end(JSON.stringify(details));
     } else if (req.method === 'GET' && url.pathname === '/api/v1/search') {
-      const results = url.searchParams.get('query') === 'MF Ghost' ? [{
+      const results = url.searchParams.get('query') === 'MF Ghost' ? (options.searchResults ?? [{
         id: details.id, name: details.name, mediaType: 'tv', overview: '',
-      }] : [];
+      }]) : [];
       res.end(JSON.stringify({ page: 1, totalPages: 1, totalResults: results.length, results }));
     } else if (req.method === 'POST' && req.url === '/api/v1/request') {
       let body = '';
@@ -276,6 +276,27 @@ test('search_media: includeDetails and checkAvailability work in compact single 
     assert.equal(item.details.mediaStatus, 4);
     assert.equal(item.details.seasons.find((season: any) => season.seasonNumber === 2).status, 'DELETED');
   });
+});
+
+test('search_media: failed detail lookup preserves single and batch search hits', async () => {
+  await withTools(showDetails(), async call => {
+    for (const enrichment of [{ checkAvailability: true }, { includeDetails: { fields: ['numberOfEpisodes'] } }]) {
+      const single = await call('search_media', { query: 'MF Ghost', ...enrichment });
+      const batch = await call('search_media', { queries: ['MF Ghost'], ...enrichment });
+      assert.equal(batch.summary.failed, 0);
+      for (const results of [single.results, batch.results[0].results]) {
+        assert.deepEqual(results.map((item: any) => item.id), [154526, 999]);
+        assert.equal(results[0].status, 'APPROVED');
+        if ('includeDetails' in enrichment) assert.equal(results[0].details.numberOfEpisodes, 48);
+        assert.equal(results[1].title, 'Unresolvable search hit');
+        assert.equal(results[1].status, 'AVAILABLE');
+        assert.equal(results[1].details, undefined);
+      }
+    }
+  }, { searchResults: [
+    { id: 154526, name: 'MF GHOST', mediaType: 'tv', overview: '' },
+    { id: 999, name: 'Unresolvable search hit', mediaType: 'tv', overview: '', mediaInfo: { status: 5 } },
+  ] });
 });
 
 test('search_media: dedupe reads request.seasons without a nested media object', async () => {

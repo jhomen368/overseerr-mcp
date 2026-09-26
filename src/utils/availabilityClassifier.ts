@@ -168,9 +168,16 @@ function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): Class
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const RequestStatus = {
+  DECLINED: 3,
+  COMPLETED: 5,
+} as const;
+
 /** Declined and completed requests do not reserve seasons in Seerr. */
 export function isActiveRequest(request: MediaRequestSummary, is4k = false): boolean {
-  return request.status !== 3 && request.status !== 5 && (request.is4k ?? false) === is4k;
+  return request.status !== RequestStatus.DECLINED
+    && request.status !== RequestStatus.COMPLETED
+    && (request.is4k ?? false) === is4k;
 }
 
 function pass(): ClassifierResult {
