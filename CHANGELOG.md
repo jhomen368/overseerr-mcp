@@ -1,3 +1,16 @@
+## [2.3.1] - 2026-09-26
+
+### Fixed
+- TV requests now validate the requested seasons and quality, skip covered seasons, and avoid blocking new seasons because other seasons are already requested.
+- Batch requests and dedupe auto-requests preserve dry-run previews, confirmation prompts, and skipped-season details. Failed request submissions are not retried.
+- Search normalization, availability checks, and optional details work consistently across search modes. A failed detail lookup no longer discards the other results.
+- Search request counts exclude completed and declined requests, and Seerr's deleted-media status is labeled correctly.
+- Restored missing lockfile entries so clean dependency installs succeed.
+
+### Changed
+- Updated Axios to 1.20.0, Node.js types to 26.6.1, and transitive dependencies, including security fixes for Hono, js-yaml, and qs.
+- Updated CodeQL to 4.38.1 and enabled npm trusted publishing.
+
 ## [2.3.0] - 2026-08-28
 
 ### Added
