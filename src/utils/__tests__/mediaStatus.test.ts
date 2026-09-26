@@ -28,6 +28,10 @@ test('isTracked: DELETED (6) is not tracked', () => {
   assert.equal(isTracked(6), false);
 });
 
+test('isTracked: Seerr DELETED (7) is not tracked', () => {
+  assert.equal(isTracked(7), false);
+});
+
 test('isTracked: 0 is not tracked', () => {
   assert.equal(isTracked(0), false);
 });
@@ -59,6 +63,7 @@ test('label: maps known status codes to strings', () => {
   assert.equal(label(4), 'PARTIALLY_AVAILABLE');
   assert.equal(label(5), 'AVAILABLE');
   assert.equal(label(6), 'DELETED');
+  assert.equal(label(7), 'DELETED');
 });
 
 test('label: returns UNKNOWN for unrecognised codes', () => {

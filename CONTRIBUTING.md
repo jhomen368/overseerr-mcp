@@ -101,7 +101,7 @@ Before submitting a pull request:
 
 ## Documentation
 
-- Update README.md if you change functionality
+- Keep README.md focused on setup and common usage. Document tool behavior in MCP tool descriptions and implementation details in code comments and tests.
 - Add JSDoc comments for new functions/classes
 - Include usage examples for new features
 

@@ -20,11 +20,11 @@ function makeRequest(seasonNumbers?: number[]): MediaRequest {
   return {
     id: 99,
     status: 2,
+    seasons: seasonNumbers?.map(n => ({ seasonNumber: n, status: 2 })),
     media: {
       id: 1,
       tmdbId: 100,
       status: 1,
-      seasons: seasonNumbers?.map(n => ({ seasonNumber: n, status: 2 })),
     },
     createdAt: '2024-01-01',
     updatedAt: '2024-01-01',
@@ -297,4 +297,61 @@ test('tv no season, no showSeasons, no requests → AVAILABLE_FOR_REQUEST', () =
   const result = classifyAvailability(makeMediaInfo(), 'tv', null);
   assert.equal(result.status, 'pass');
   assert.equal(result.reasonCode, 'AVAILABLE_FOR_REQUEST');
+});
+
+test('explicit seasons ignore show-level requests with unknown scope and missing season metadata', () => {
+  const result = classifyAvailability(
+    makeMediaInfo({ status: 5, requests: [makeRequest()] }),
+    'tv', null, { requestedSeasons: [2] }
+  );
+  assert.equal(result.reasonCode, 'AVAILABLE_FOR_REQUEST');
+});
+
+test('request scope comes from request.seasons, not the media season inventory', () => {
+  const request = makeRequest([1]);
+  request.media.seasons = [{ seasonNumber: 1, status: 5 }, { seasonNumber: 2, status: 7 }];
+  const mediaInfo = makeMediaInfo({ requests: [request] });
+  assert.equal(classifyAvailability(mediaInfo, 'tv', 1).reasonCode, 'SEASON_REQUESTED');
+  assert.equal(classifyAvailability(mediaInfo, 'tv', 2).reasonCode, 'AVAILABLE_FOR_REQUEST');
+});
+
+test('all regular seasons being tracked does not block explicit specials', () => {
+  const result = classifyAvailability(
+    makeMediaInfo({ seasons: [{ id: 1, seasonNumber: 1, status: 5, createdAt: '', updatedAt: '' }] }),
+    'tv', null, { requestedSeasons: [0], showSeasons: [{ seasonNumber: 1 }] }
+  );
+  assert.equal(result.reasonCode, 'AVAILABLE_FOR_REQUEST');
+});
+
+test('season validation respects media status and the separate request status lifecycle', () => {
+  for (const status of [2, 3, 4, 5]) {
+    const info = makeMediaInfo({ seasons: [{ id: 1, seasonNumber: 2, status, createdAt: '', updatedAt: '' }] });
+    assert.equal(classifyAvailability(info, 'tv', 2).reasonCode, 'SEASON_AVAILABLE');
+  }
+  for (const status of [1, 2, 3, 4, 5]) {
+    const request = { ...makeRequest([2]), status };
+    const info = makeMediaInfo({
+      requests: [request],
+      seasons: [{ id: 1, seasonNumber: 2, status: 7, createdAt: '', updatedAt: '' }],
+    });
+    assert.equal(classifyAvailability(info, 'tv', 2).reasonCode,
+      [3, 5].includes(status) ? 'AVAILABLE_FOR_REQUEST' : 'SEASON_REQUESTED');
+  }
+});
+
+test('4K season validation uses status4k and requests for the same quality', () => {
+  const info = makeMediaInfo({
+    status: 5,
+    status4k: 4,
+    requests: [{ ...makeRequest([3]), is4k: true }],
+    seasons: [
+      { id: 1, seasonNumber: 1, status: 5, status4k: 1, createdAt: '', updatedAt: '' },
+      { id: 2, seasonNumber: 2, status: 1, status4k: 5, createdAt: '', updatedAt: '' },
+    ],
+  });
+  assert.equal(classifyAvailability(info, 'tv', 1, { is4k: true }).reasonCode, 'AVAILABLE_FOR_REQUEST');
+  assert.equal(classifyAvailability(info, 'tv', 2, { is4k: true }).reasonCode, 'SEASON_AVAILABLE');
+  assert.equal(classifyAvailability(info, 'tv', 2).reasonCode, 'AVAILABLE_FOR_REQUEST');
+  assert.equal(classifyAvailability(info, 'tv', 3, { is4k: true }).reasonCode, 'SEASON_REQUESTED');
+  assert.equal(classifyAvailability(info, 'tv', 3).reasonCode, 'AVAILABLE_FOR_REQUEST');
 });
