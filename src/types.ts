@@ -1,17 +1,10 @@
 // Overseerr API response types
 
-export interface MediaRequest {
+export interface MediaRequestSummary {
   id: number;
   status: number;
-  media: {
-    id: number;
-    tmdbId: number;
-    status: number;
-    seasons?: Array<{
-      seasonNumber: number;
-      status: number;
-    }>;
-  };
+  is4k?: boolean;
+  seasons?: Array<{ seasonNumber: number; status: number }>;
   createdAt: string;
   updatedAt: string;
   requestedBy: {
@@ -21,15 +14,26 @@ export interface MediaRequest {
   };
 }
 
+export interface MediaRequest extends MediaRequestSummary {
+  media: {
+    id: number;
+    tmdbId: number;
+    status: number;
+    seasons?: Array<{ seasonNumber: number; status: number }>;
+  };
+}
+
 export interface MediaInfo {
   id: number;
   tmdbId: number;
   status: number;
-  requests?: MediaRequest[];
+  status4k?: number;
+  requests?: MediaRequestSummary[];
   seasons?: Array<{
     id: number;
     seasonNumber: number;
     status: number;
+    status4k?: number;
     createdAt: string;
     updatedAt: string;
   }>;
@@ -100,13 +104,14 @@ export interface SearchMediaArgs {
     profileId?: number;
     rootFolder?: string;
     dryRun?: boolean;
+    confirmed?: boolean;
   };
   checkAvailability?: boolean;
   format?: 'compact' | 'standard' | 'full';
   limit?: number;
   page?: number;
   language?: string;
-  // NEW: Optional details enrichment for dedupe mode
+  // Optional details enrichment for all search modes
   includeDetails?: {
     fields?: string[];  // Array of field names to include
     includeSeason?: boolean;  // Auto-include season info for TV shows (default: true)

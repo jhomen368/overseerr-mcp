@@ -1,5 +1,5 @@
-import type { MediaInfo, ReasonCode } from '../types.js';
-import { isTracked, label } from './mediaStatus.js';
+import type { MediaInfo, MediaRequestSummary, ReasonCode } from '../types.js';
+import { isTracked, label, statusForQuality } from './mediaStatus.js';
 
 export interface ClassifierResult {
   status: 'pass' | 'blocked';
@@ -12,6 +12,8 @@ export interface ClassifierOptions {
   showSeasons?: Array<{ seasonNumber: number }>;
   /** Explicit seasons the caller wants to request. When provided, checked as a unit. */
   requestedSeasons?: number[];
+  /** Check the 4K library and requests instead of standard quality. */
+  is4k?: boolean;
 }
 
 /**
@@ -29,6 +31,17 @@ export function classifyAvailability(
   seasonNumber: number | null,
   options: ClassifierOptions = {}
 ): ClassifierResult {
+  if (mediaInfo) {
+    mediaInfo = {
+      ...mediaInfo,
+      status: statusForQuality(mediaInfo, options.is4k),
+      seasons: mediaInfo.seasons?.map(season => ({
+        ...season,
+        status: statusForQuality(season, options.is4k),
+      })),
+      requests: mediaInfo.requests?.filter(request => isActiveRequest(request, options.is4k)),
+    };
+  }
   if (mediaType === 'movie') {
     return classifyMovie(mediaInfo);
   }
@@ -83,7 +96,7 @@ function classifyTvSeason(mediaInfo: MediaInfo, seasonNumber: number): Classifie
   }
 
   const seasonRequested = mediaInfo.requests?.some(req =>
-    req.media.seasons?.some(s => s.seasonNumber === seasonNumber)
+    req.seasons?.some(s => s.seasonNumber === seasonNumber)
   );
   if (seasonRequested) {
     return blocked('SEASON_REQUESTED', `Season ${seasonNumber} is already requested`);
@@ -95,16 +108,26 @@ function classifyTvSeason(mediaInfo: MediaInfo, seasonNumber: number): Classifie
 function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): ClassifierResult {
   const { showSeasons, requestedSeasons } = options;
 
-  // Show tracked at show level — only applies when no explicit seasons are targeted.
-  // With requestedSeasons present, the per-season checks below are authoritative;
-  // a PARTIALLY_AVAILABLE show (status 4) should not block an untracked target season.
-  if (isTracked(mediaInfo.status) && (!requestedSeasons || requestedSeasons.length === 0)) {
+  // Explicit targets are authoritative, even when show metadata is missing or stale.
+  if (requestedSeasons && requestedSeasons.length > 0) {
+    const results = requestedSeasons.map(season => classifyTvSeason(mediaInfo, season));
+    if (results.every(result => result.reasonCode === 'SEASON_AVAILABLE')) {
+      return blocked('SEASON_AVAILABLE', `Requested season(s) already in library (${requestedSeasons.join(', ')})`);
+    }
+    if (results.every(result => result.status === 'blocked')) {
+      return blocked('SEASON_REQUESTED', `Requested season(s) already in library or requested (${requestedSeasons.join(', ')})`);
+    }
+    return pass();
+  }
+
+  // Show-level status applies only when no explicit seasons are targeted.
+  if (isTracked(mediaInfo.status)) {
     return blocked('ALREADY_AVAILABLE', 'Already in library (show-level)');
   }
 
   // Show-level request (request with no seasons attached)
   const hasShowLevelRequest = mediaInfo.requests?.some(
-    req => !req.media.seasons || req.media.seasons.length === 0
+    req => !req.seasons || req.seasons.length === 0
   );
   if (hasShowLevelRequest) {
     return blocked('ALREADY_REQUESTED', 'Already requested (show-level)');
@@ -113,11 +136,11 @@ function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): Class
   const regularSeasons = showSeasons?.filter(s => s.seasonNumber > 0) ?? [];
 
   if (regularSeasons.length > 0) {
-    // Per-season predicate helpers — used by both the "all seasons" and "target seasons" checks
+    // Check all regular seasons when the caller has not supplied explicit targets.
     const isSeasonTracked = (sNum: number): boolean =>
       mediaInfo.seasons?.some(si => si.seasonNumber === sNum && isTracked(si.status)) ?? false;
     const isSeasonRequested = (sNum: number): boolean =>
-      mediaInfo.requests?.some(req => req.media.seasons?.some(s => s.seasonNumber === sNum)) ?? false;
+      mediaInfo.requests?.some(req => req.seasons?.some(s => s.seasonNumber === sNum)) ?? false;
 
     // All seasons tracked
     const allSeasonsAvailable = regularSeasons.every(s => isSeasonTracked(s.seasonNumber));
@@ -132,19 +155,6 @@ function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): Class
       const nums = regularSeasons.map(s => s.seasonNumber).sort((a, b) => a - b).join(', ');
       return blocked('ALREADY_REQUESTED', `All regular seasons already requested (${nums})`);
     }
-
-    // Caller supplied an explicit requestedSeasons list — check as a unit
-    if (requestedSeasons && requestedSeasons.length > 0) {
-      if (requestedSeasons.every(isSeasonTracked)) {
-        return blocked('SEASON_AVAILABLE', `Requested season(s) already in library (${requestedSeasons.join(', ')})`);
-      }
-      if (requestedSeasons.every(isSeasonRequested)) {
-        return blocked('SEASON_REQUESTED', `Requested season(s) already requested (${requestedSeasons.join(', ')})`);
-      }
-      if (requestedSeasons.every(sNum => isSeasonTracked(sNum) || isSeasonRequested(sNum))) {
-        return blocked('SEASON_REQUESTED', `Requested season(s) already in library or requested (${requestedSeasons.join(', ')})`);
-      }
-    }
   } else {
     // Fallback: no showSeasons data — check requests only (show-level status already
     // handled at the top of this function, so isTracked would be false here)
@@ -158,6 +168,18 @@ function classifyTvShow(mediaInfo: MediaInfo, options: ClassifierOptions): Class
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const RequestStatus = {
+  DECLINED: 3,
+  COMPLETED: 5,
+} as const;
+
+/** Declined and completed requests do not reserve seasons in Seerr. */
+export function isActiveRequest(request: MediaRequestSummary, is4k = false): boolean {
+  return request.status !== RequestStatus.DECLINED
+    && request.status !== RequestStatus.COMPLETED
+    && (request.is4k ?? false) === is4k;
+}
+
 function pass(): ClassifierResult {
   return { status: 'pass', reasonCode: 'AVAILABLE_FOR_REQUEST' };
 }
@@ -166,10 +188,11 @@ function blocked(reasonCode: ReasonCode, reason: string): ClassifierResult {
   return { status: 'blocked', reasonCode, reason };
 }
 
-export function trackedSeasonNumbers(mediaInfo: MediaInfo): number[] {
+/** Lists tracked regular seasons for display at the requested quality. */
+export function trackedSeasonNumbers(mediaInfo: MediaInfo, is4k = false): number[] {
   return (
     mediaInfo.seasons
-      ?.filter(s => s.seasonNumber > 0 && isTracked(s.status))
+      ?.filter(s => s.seasonNumber > 0 && isTracked(statusForQuality(s, is4k)))
       .map(s => s.seasonNumber)
       .sort((a, b) => a - b) ?? []
   );

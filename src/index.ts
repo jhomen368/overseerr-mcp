@@ -14,7 +14,8 @@ import { SeerrApiClient } from './utils/seerrClient.js';
 import { VERSION } from './version.js';
 import { normalizeTitle, extractSeasonNumber, inferExpectedMediaType, selectBestMatch } from './utils/normalize.js';
 import { batchWithRetry } from './utils/retry.js';
-import { classifyAvailability, trackedSeasonNumbers } from './utils/availabilityClassifier.js';
+import { classifyAvailability, isActiveRequest, trackedSeasonNumbers } from './utils/availabilityClassifier.js';
+import { label as mediaStatusLabel, statusForQuality } from './utils/mediaStatus.js';
 import {
   SearchResult,
   SearchResultItem,
@@ -34,7 +35,7 @@ import {
 } from './types.js';
 
 // Field mapping for includeDetails feature
-type FieldMapper = (item: { mediaType: string; id: number }, details: MediaDetails) => any;
+type FieldMapper = (item: { mediaType: string; id: number }, details: MediaDetails, is4k?: boolean) => any;
 
 const FIELD_MAP: Record<string, FieldMapper> = {
   // Basic info (from search results, no API call needed)
@@ -51,7 +52,7 @@ const FIELD_MAP: Record<string, FieldMapper> = {
   // TV-specific
   'numberOfSeasons': (item, details) => details.numberOfSeasons,
   'numberOfEpisodes': (item, details) => details.numberOfEpisodes,
-  'seasons': (item, details) => enrichSeasons(details),
+  'seasons': (item, details, is4k) => enrichSeasons(details, is4k),
 
   // Advanced details
   'releaseDate': (item, details) => details.releaseDate,
@@ -65,15 +66,15 @@ const FIELD_MAP: Record<string, FieldMapper> = {
   'tagline': (item, details) => (details as any).tagline,
 
   // Availability info (from mediaInfo)
-  'mediaStatus': (item, details) => details.mediaInfo?.status,
-  'hasRequests': (item, details) => (details.mediaInfo?.requests?.length || 0) > 0,
-  'requestCount': (item, details) => details.mediaInfo?.requests?.length || 0,
+  'mediaStatus': (item, details, is4k) => details.mediaInfo ? statusForQuality(details.mediaInfo, is4k) : undefined,
+  'hasRequests': (item, details, is4k = false) => details.mediaInfo?.requests?.some(req => isActiveRequest(req, is4k)) ?? false,
+  'requestCount': (item, details, is4k = false) => details.mediaInfo?.requests?.filter(req => isActiveRequest(req, is4k)).length || 0,
 };
 
 /**
  * Enriches seasons array with availability status
  */
-function enrichSeasons(details: MediaDetails): DedupeDetails['seasons'] {
+function enrichSeasons(details: MediaDetails, is4k = false): DedupeDetails['seasons'] {
   if (!details.seasons || !Array.isArray(details.seasons)) {
     return undefined;
   }
@@ -85,24 +86,16 @@ function enrichSeasons(details: MediaDetails): DedupeDetails['seasons'] {
     if (details.mediaInfo?.seasons) {
       const seasonInfo = details.mediaInfo.seasons.find(s => s.seasonNumber === season.seasonNumber);
       if (seasonInfo) {
-        if (seasonInfo.status === 5) {
-          status = 'AVAILABLE';
-        } else if (seasonInfo.status === 4) {
-          status = 'PARTIALLY_AVAILABLE';
-        } else if (seasonInfo.status === 3) {
-          status = 'PROCESSING';
-        } else if (seasonInfo.status === 2) {
-          status = 'PENDING';
-        }
+        status = mediaStatusLabel(statusForQuality(seasonInfo, is4k));
       }
     }
     
     // Check if this season has been requested
     if (details.mediaInfo?.requests) {
       const hasRequest = details.mediaInfo.requests.some(req =>
-        req.media.seasons?.some(s => s.seasonNumber === season.seasonNumber)
+        isActiveRequest(req, is4k) && req.seasons?.some(s => s.seasonNumber === season.seasonNumber)
       );
-      if (hasRequest && status === 'NOT_REQUESTED') {
+      if (hasRequest && ['NOT_REQUESTED', 'UNKNOWN', 'DELETED'].includes(status)) {
         status = 'REQUESTED';
       }
     }
@@ -114,6 +107,23 @@ function enrichSeasons(details: MediaDetails): DedupeDetails['seasons'] {
       status
     };
   });
+}
+
+/** Expands regular seasons from metadata, using the count only when no season list is supplied. */
+function regularSeasonNumbers(details: MediaDetails): number[] {
+  if (details.seasons?.length) {
+    return details.seasons.filter(season => season.seasonNumber > 0).map(season => season.seasonNumber);
+  }
+  return Array.from({ length: details.numberOfSeasons || 0 }, (_, index) => index + 1);
+}
+
+/** Checks season existence before availability classification; counts never imply specials. */
+function doesSeasonExist(details: MediaDetails, seasonNumber: number): boolean {
+  if (!Number.isInteger(seasonNumber) || seasonNumber < 0) return false;
+  if (details.seasons?.length) {
+    return details.seasons.some(season => season.seasonNumber === seasonNumber);
+  }
+  return seasonNumber > 0 && seasonNumber <= (details.numberOfSeasons || 0);
 }
 
 // Validation functions
@@ -215,16 +225,17 @@ class OverseerrServer {
   }
 
   /**
-   * Enriches a dedupe result with requested detail fields
+   * Enriches a search result with requested detail fields
    */
-  private enrichDedupeResult(
-    baseResult: DedupeResult,
+  private enrichSearchResult<T extends object>(
+    baseResult: T,
     item: { mediaType: string; id: number },
     details: MediaDetails,
     requestedFields: string[],
     seasonNumber?: number | null,
-    includeSeason: boolean = true
-  ): DedupeResult {
+    includeSeason: boolean = true,
+    is4k: boolean = false
+  ): T & { details?: DedupeDetails } {
     if (!requestedFields || requestedFields.length === 0) {
       return baseResult;
     }
@@ -235,7 +246,7 @@ class OverseerrServer {
     for (const field of requestedFields) {
       const mapper = FIELD_MAP[field];
       if (mapper) {
-        const value = mapper(item, details);
+        const value = mapper(item, details, is4k);
         if (value !== undefined && value !== null) {
           (enrichedDetails as any)[field] = value;
         }
@@ -243,42 +254,12 @@ class OverseerrServer {
     }
     
     // Auto-add targetSeason for TV shows with season number
-    if (includeSeason && seasonNumber && item.mediaType === 'tv' && details.seasons) {
-      const targetSeasonData = details.seasons.find(s => s.seasonNumber === seasonNumber);
+    if (includeSeason && seasonNumber != null && item.mediaType === 'tv' && details.seasons) {
+      const targetSeasonData = enrichSeasons(details, is4k)?.find(s => s.seasonNumber === seasonNumber);
       if (targetSeasonData) {
-        // Determine season status
-        let seasonStatus = 'NOT_REQUESTED';
-        
-        if (details.mediaInfo?.seasons) {
-          const seasonInfo = details.mediaInfo.seasons.find(s => s.seasonNumber === seasonNumber);
-          if (seasonInfo) {
-            if (seasonInfo.status === 5) {
-              seasonStatus = 'AVAILABLE';
-            } else if (seasonInfo.status === 4) {
-              seasonStatus = 'PARTIALLY_AVAILABLE';
-            } else if (seasonInfo.status === 3) {
-              seasonStatus = 'PROCESSING';
-            } else if (seasonInfo.status === 2) {
-              seasonStatus = 'PENDING';
-            }
-          }
-        }
-        
-        // Check if requested
-        if (details.mediaInfo?.requests) {
-          const hasRequest = details.mediaInfo.requests.some(req =>
-            req.media.seasons?.some(s => s.seasonNumber === seasonNumber)
-          );
-          if (hasRequest && seasonStatus === 'NOT_REQUESTED') {
-            seasonStatus = 'REQUESTED';
-          }
-        }
-        
         enrichedDetails.targetSeason = {
-          seasonNumber: targetSeasonData.seasonNumber,
-          episodeCount: targetSeasonData.episodeCount,
-          airDate: targetSeasonData.airDate,
-          status: seasonStatus,
+          ...targetSeasonData,
+          status: targetSeasonData.status || 'NOT_REQUESTED',
         };
       }
     }
@@ -386,12 +367,12 @@ class OverseerrServer {
               },
               autoNormalize: {
                 type: 'boolean',
-                description: 'Strip "Season N"/"Part N" from titles',
+                description: 'Strip "Season N"/"Part N" from single, batch, and dedupe search titles',
                 default: false,
               },
               autoRequest: {
                 type: 'boolean',
-                description: 'Auto-request passing items (requires dedupeMode)',
+                description: 'Auto-request passing items (requires dedupeMode). TV requests over 24 new episodes need requestOptions.confirmed:true.',
                 default: false,
               },
               requestOptions: {
@@ -416,6 +397,11 @@ class OverseerrServer {
                   dryRun: {
                     type: 'boolean',
                     description: 'Preview only',
+                    default: false,
+                  },
+                  confirmed: {
+                    type: 'boolean',
+                    description: 'Confirm TV requests over 24 new episodes',
                     default: false,
                   },
                 },
@@ -447,7 +433,7 @@ class OverseerrServer {
               },
               includeDetails: {
                 type: 'object',
-                description: 'Add details to dedupe results (dedupe only)',
+                description: 'Add a details object to search results in any mode or format (fetches per-result details)',
                 properties: {
                   fields: {
                     type: 'array',
@@ -522,7 +508,7 @@ class OverseerrServer {
               rootFolder: { type: 'string' },
               validateFirst: {
                 type: 'boolean',
-                description: 'Check existing',
+                description: 'Check existing requests and availability. TV checks only requested seasons and skips covered seasons.',
                 default: true,
               },
               dryRun: {
@@ -589,7 +575,9 @@ class OverseerrServer {
         {
           name: 'get_media_details',
           description:
-            'Get media details. Single/batch with level control (basic/standard/full).',
+            'Get media details. Single/batch with level control (basic/standard/full). ' +
+            'Media/season status: 1=UNKNOWN, 2=PENDING, 3=PROCESSING, 4=PARTIALLY_AVAILABLE, 5=AVAILABLE, 7=DELETED (Seerr). ' +
+            'Code 6 is BLOCKLISTED in Seerr or DELETED in legacy Overseerr. Request statuses use a separate enum.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -744,12 +732,12 @@ class OverseerrServer {
   }
 
   private async handleSingleSearch(args: SearchMediaArgs) {
-    const query = args.query!;
+    const query = args.autoNormalize ? normalizeTitle(args.query!) : args.query!;
     const result = await this.client.search(query, {
       page: args.page || 1,
       language: args.language || 'en',
     });
-    return this.formatSearchResponse(result, args.format || 'compact', args.limit);
+    return this.formatSearchResponse(result, args);
   }
 
   private async handleBatchSearch(args: SearchMediaArgs) {
@@ -758,7 +746,9 @@ class OverseerrServer {
     const results = await batchWithRetry(
       queries,
       async (query) => {
-        return this.client.search(query, { page: 1, language: args.language || 'en' });
+        const searchTitle = args.autoNormalize ? normalizeTitle(query) : query;
+        const result = await this.client.search(searchTitle, { page: args.page || 1, language: args.language || 'en' });
+        return this.formatSearchResults(result, args, query);
       }
     );
 
@@ -777,9 +767,7 @@ class OverseerrServer {
             },
             results: successful.map(r => ({
               query: r.item,
-              results: this.limitResults(r.result!.results, args.limit).map(item =>
-                this.formatCompactResult(item)
-              ),
+              results: r.result,
             })),
             errors: failed.map(r => ({
               query: r.item,
@@ -801,20 +789,6 @@ class OverseerrServer {
 
     const dedupeResults: DedupeResult[] = [];
     const autoRequestQueue: Array<{ mediaType: 'movie' | 'tv'; mediaId: number; seasons?: number[] | 'all' }> = [];
-
-    /**
-     * Checks whether a season number exists in media details.
-     * Prefers the seasons array (authoritative); falls back to numberOfSeasons.
-     */
-    const doesSeasonExist = (det: MediaDetails, sNum: number): boolean => {
-      if (det.seasons?.length) {
-        return det.seasons.some(s => s.seasonNumber === sNum);
-      }
-      if (det.numberOfSeasons !== undefined) {
-        return sNum <= det.numberOfSeasons;
-      }
-      return false;
-    };
 
     const processedTitles = await batchWithRetry(
       titles,
@@ -857,7 +831,7 @@ class OverseerrServer {
         );
 
         // ── 4. Season existence check (SEASON_NOT_FOUND — orchestrator concern) ─
-        if (seasonNumber && bestMatch.mediaType === 'tv') {
+        if (seasonNumber !== null && bestMatch.mediaType === 'tv') {
           if (!doesSeasonExist(details, seasonNumber)) {
             console.error(`[WARN] Season ${seasonNumber} not found in seasons data for "${bestMatch.title || bestMatch.name}". Trying alternates...`);
             let foundValid = false;
@@ -883,7 +857,7 @@ class OverseerrServer {
                 isActionable: false,
                 franchiseInfo: `Season ${seasonNumber} not found in "${bestMatch.title || bestMatch.name}"`,
               };
-              return this.enrichDedupeResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, seasonNumber, includeSeason);
+              return this.enrichSearchResult(baseResult, { mediaType: 'tv', id: bestMatch.id }, details, requestedFields, seasonNumber, includeSeason, args.requestOptions?.is4k);
             }
           }
         }
@@ -891,15 +865,33 @@ class OverseerrServer {
         // ── 5. Classify ────────────────────────────────────────────────────────
         const mediaType = bestMatch.mediaType as 'movie' | 'tv';
         const showSeasons = mediaType === 'tv'
-          ? details.seasons?.filter(s => s.seasonNumber > 0)
+          ? regularSeasonNumbers(details).map(seasonNumber => ({ seasonNumber }))
           : undefined;
-        const requestedSeasons = args.requestOptions?.seasons && args.requestOptions.seasons !== 'all'
-          ? (args.requestOptions.seasons as number[])
+        const seasonTarget = seasonNumber !== null ? [seasonNumber] : args.requestOptions?.seasons ?? (autoRequest ? 'all' : undefined);
+        const requestedSeasons = mediaType === 'tv'
+          ? seasonTarget === 'all' ? regularSeasonNumbers(details) : seasonTarget
           : undefined;
+
+        if (requestedSeasons && (requestedSeasons.length === 0 || requestedSeasons.some(season => !doesSeasonExist(details, season)))) {
+          const missingSeasons = requestedSeasons.filter(season => !doesSeasonExist(details, season));
+          const baseResult: DedupeResult = {
+            title: originalTitle,
+            id: bestMatch.id,
+            mediaType,
+            status: 'blocked',
+            reasonCode: 'SEASON_NOT_FOUND',
+            isActionable: false,
+            reason: missingSeasons.length > 0
+              ? `Season(s) ${missingSeasons.join(', ')} not found in ${details.name || details.title}`
+              : 'No regular seasons found to request',
+          };
+          return this.enrichSearchResult(baseResult, { mediaType, id: bestMatch.id }, details, requestedFields, seasonNumber, includeSeason, args.requestOptions?.is4k);
+        }
 
         const classified = classifyAvailability(details.mediaInfo, mediaType, seasonNumber, {
           showSeasons,
           requestedSeasons,
+          is4k: args.requestOptions?.is4k,
         });
 
         // ── 6. Build franchiseInfo (orchestrator assembles display string) ─────
@@ -910,9 +902,10 @@ class OverseerrServer {
           if (seasonNumber !== null) {
             franchiseInfo = `Season ${seasonNumber} of ${showName}`;
           } else {
-            const availableNums = details.mediaInfo ? trackedSeasonNumbers(details.mediaInfo) : [];
+            const availableNums = details.mediaInfo ? trackedSeasonNumbers(details.mediaInfo, args.requestOptions?.is4k) : [];
             const requestedNums = details.mediaInfo?.requests
-              ?.flatMap(req => req.media.seasons?.filter(s => s.seasonNumber > 0).map(s => s.seasonNumber) ?? [])
+              ?.filter(req => isActiveRequest(req, args.requestOptions?.is4k))
+              .flatMap(req => req.seasons?.filter(s => s.seasonNumber > 0).map(s => s.seasonNumber) ?? [])
               .filter((n, i, arr) => arr.indexOf(n) === i)
               .sort((a, b) => a - b) ?? [];
 
@@ -937,7 +930,7 @@ class OverseerrServer {
         };
 
         // ── 8. Enrich (unconditional — no-op when requestedFields is empty) ────
-        return this.enrichDedupeResult(baseResult, { mediaType, id: bestMatch.id }, details, requestedFields, seasonNumber, includeSeason);
+        return this.enrichSearchResult(baseResult, { mediaType, id: bestMatch.id }, details, requestedFields, seasonNumber, includeSeason, args.requestOptions?.is4k);
       }
     );
 
@@ -953,7 +946,7 @@ class OverseerrServer {
           
           // For TV shows, determine which seasons to request
           let seasonsToRequest: number[] | 'all' | undefined;
-          if (seasonNumber) {
+          if (seasonNumber !== null) {
             // Specific season mentioned in title
             seasonsToRequest = [seasonNumber];
           } else if (args.requestOptions?.seasons) {
@@ -986,92 +979,39 @@ class OverseerrServer {
     // If autoRequest enabled and there are items to request, process them
     let autoRequestResults;
     if (autoRequest && autoRequestQueue.length > 0) {
-      // Check if this is a dry run
+      const batch = await this.executeRequestBatch({ ...args.requestOptions, items: autoRequestQueue }, 'code');
       const isDryRun = args.requestOptions?.dryRun === true;
+      const errors = batch.errors.map(error => ({
+        ...error,
+        mediaType: error.item.mediaType,
+        mediaId: error.item.mediaId,
+      }));
 
       if (isDryRun) {
-        // Dry run - don't actually request, just show what would be requested
         autoRequestResults = {
           dryRun: true,
           totalQueued: autoRequestQueue.length,
-          wouldRequest: autoRequestQueue.map(item => ({
-            mediaType: item.mediaType,
-            mediaId: item.mediaId,
-            seasons: item.seasons,
+          wouldRequest: batch.results.filter(result => result.dryRun).map(result => ({
+            ...result.wouldRequest,
+            ...(result.skippedSeasons ? { skippedSeasons: result.skippedSeasons } : {}),
           })),
+          failed: batch.summary.failed,
+          errors,
           message: 'Dry run - no requests were made. Remove "dryRun: true" from requestOptions to actually request.',
         };
       } else {
-        // Actually make the requests
-        const requestResults = await batchWithRetry(
-          autoRequestQueue,
-          async (item) => {
-            try {
-              // Expand "all" to actual season numbers (excluding season 0 - specials)
-              let seasonsToRequest = item.seasons;
-              if (item.mediaType === 'tv' && item.seasons === 'all') {
-                const details = await this.client.getMediaDetails('tv', item.mediaId);
-                
-                // Get all regular seasons excluding season 0 (specials)
-                const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
-                seasonsToRequest = regularSeasons.map(s => s.seasonNumber);
-                
-                // If no regular seasons found, fall back to numberOfSeasons
-                if (seasonsToRequest.length === 0 && details.numberOfSeasons) {
-                  seasonsToRequest = Array.from({ length: details.numberOfSeasons }, (_, i) => i + 1);
-                  // Filter out season 0 if it's in the list
-                  seasonsToRequest = seasonsToRequest.filter(s => s > 0);
-                }
-              }
-
-              const requestBody: any = {
-                mediaType: item.mediaType,
-                mediaId: item.mediaId,
-                is4k: args.requestOptions?.is4k || false,
-              };
-
-              if (item.mediaType === 'tv' && seasonsToRequest) {
-                requestBody.seasons = seasonsToRequest;
-              }
-              if (args.requestOptions?.serverId) requestBody.serverId = args.requestOptions.serverId;
-              if (args.requestOptions?.profileId) requestBody.profileId = args.requestOptions.profileId;
-              if (args.requestOptions?.rootFolder) requestBody.rootFolder = args.requestOptions.rootFolder;
-
-              const createdRequest = await this.client.createRequest(requestBody);
-
-              return {
-                success: true,
-                requestId: createdRequest.id,
-                mediaId: item.mediaId,
-                mediaType: item.mediaType,
-                seasons: seasonsToRequest,
-                status: createdRequest.status
-              };
-            } catch (error: any) {
-              return {
-                success: false,
-                mediaId: item.mediaId,
-                mediaType: item.mediaType,
-                error: (error as any).response?.data?.message || (error as any).message || 'Unknown error',
-              };
-            }
-          }
-        );
-
-        const successfulRequests = requestResults.filter(r => r.success && r.result?.success);
-        const failedRequests = requestResults.filter(r => !r.success || !r.result?.success);
-
         autoRequestResults = {
-          executed: true,
+          executed: batch.summary.successful > 0,
           totalRequested: autoRequestQueue.length,
-          successful: successfulRequests.length,
-          failed: failedRequests.length,
-          requests: successfulRequests.map(r => r.result),
-          errors: failedRequests.map(r => ({
-            mediaId: r.item.mediaId,
-            mediaType: r.item.mediaType,
-            error: r.result?.error?.message || r.result?.error || 'Unknown error',
+          successful: batch.summary.successful,
+          failed: batch.summary.failed,
+          requiresConfirmation: batch.summary.requiresConfirmation,
+          confirmations: batch.results.filter(result => result.requiresConfirmation),
+          requests: batch.results.filter(result => result.success).map(result => ({
+            ...result,
+            seasons: result.seasonsRequested,
           })),
+          errors,
         };
       }
     }
@@ -1121,8 +1061,9 @@ class OverseerrServer {
     return this.handleSingleRequest(requestArgs);
   }
 
-  private async handleSingleRequest(args: RequestMediaArgs) {
-    const { mediaType, mediaId, seasons, is4k, validateFirst, dryRun, confirmed } = args;
+  private async handleSingleRequest(args: RequestMediaArgs, statusFormat: 'label' | 'code' = 'label') {
+    const { mediaType, mediaId, seasons, is4k, validateFirst = true, dryRun, confirmed } = args;
+    const skippedSeasons: Array<{ seasonNumber: number; reasonCode: ReasonCode; reason?: string }> = [];
 
     // Validate TV show requests have seasons specified
     if (mediaType === 'tv' && !seasons) {
@@ -1132,20 +1073,13 @@ class OverseerrServer {
       );
     }
 
+    const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
+
     // Expand "all" to actual season numbers (excluding season 0) early in the function
     let expandedSeasons: number[] | undefined = undefined;
     if (mediaType === 'tv' && seasons) {
       if (seasons === 'all') {
-        const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
-        
-        // Get all regular seasons (exclude season 0 - specials)
-        const regularSeasons = details.seasons?.filter(s => s.seasonNumber > 0) || [];
-        expandedSeasons = regularSeasons.map(s => s.seasonNumber);
-        
-        // If no regular seasons found, fall back to numberOfSeasons
-        if (expandedSeasons.length === 0 && details.numberOfSeasons) {
-          expandedSeasons = Array.from({ length: details.numberOfSeasons }, (_, i) => i + 1);
-        }
+        expandedSeasons = regularSeasonNumbers(details);
       } else if (Array.isArray(seasons)) {
         // Already an array, use as-is
         expandedSeasons = seasons;
@@ -1172,12 +1106,72 @@ class OverseerrServer {
       }
     }
 
+    if (mediaType === 'tv' && (!expandedSeasons || expandedSeasons.length === 0)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'No valid seasons specified. Use seasons: [1, 2, 3] for specific seasons or seasons: "all" for all seasons.'
+      );
+    }
+
+    if (mediaType === 'tv') {
+      const missingSeasons = [...new Set(expandedSeasons)].filter(season => !doesSeasonExist(details, season));
+      if (missingSeasons.length > 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              status: 'SEASON_NOT_FOUND',
+              missingSeasons,
+              message: `Season(s) ${missingSeasons.join(', ')} not found in ${details.name || details.title}`,
+            }, null, 2),
+          }],
+        };
+      }
+    }
+
     // Validate first if requested
     if (validateFirst) {
-      const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
-
       const mediaInfo = details.mediaInfo;
-      if (mediaInfo?.requests && mediaInfo.requests.length > 0) {
+      const existingRequests = mediaInfo?.requests?.filter(request =>
+        isActiveRequest(request, is4k) &&
+        (mediaType !== 'tv' || request.seasons?.some(season => expandedSeasons!.includes(season.seasonNumber)))
+      ) || [];
+
+      if (mediaType === 'tv') {
+        const classified = classifyAvailability(mediaInfo, 'tv', null, { requestedSeasons: expandedSeasons, is4k });
+        const remainingSeasons: number[] = [];
+        for (const seasonNumber of new Set(expandedSeasons)) {
+          const season = classifyAvailability(mediaInfo, 'tv', seasonNumber, { is4k });
+          if (season.status === 'blocked') {
+            skippedSeasons.push({ seasonNumber, reasonCode: season.reasonCode, reason: season.reason });
+          } else {
+            remainingSeasons.push(seasonNumber);
+          }
+        }
+
+        if (classified.status === 'blocked') {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                status: classified.reasonCode,
+                message: `${details.title || details.name}: ${classified.reason}`,
+                skippedSeasons,
+                existingRequests: existingRequests.map(request => ({
+                  id: request.id,
+                  status: this.getStatusString(request.status),
+                  seasons: request.seasons?.map(season => season.seasonNumber),
+                  requestedBy: request.requestedBy.displayName || request.requestedBy.email,
+                  createdAt: request.createdAt,
+                })),
+              }, null, 2),
+            }],
+          };
+        }
+        expandedSeasons = remainingSeasons;
+      } else if (existingRequests.length > 0) {
         return {
           content: [
             {
@@ -1186,7 +1180,7 @@ class OverseerrServer {
                 success: false,
                 status: 'ALREADY_REQUESTED',
                 message: `${details.title || details.name} is already requested`,
-                existingRequests: mediaInfo.requests.map(r => ({
+                existingRequests: existingRequests.map(r => ({
                   id: r.id,
                   status: this.getStatusString(r.status),
                   requestedBy: r.requestedBy.displayName || r.requestedBy.email,
@@ -1198,7 +1192,8 @@ class OverseerrServer {
         };
       }
 
-      if (mediaInfo?.status != null && [2, 3, 4, 5].includes(mediaInfo.status)) { // PENDING, PROCESSING, PARTIALLY_AVAILABLE, or AVAILABLE
+      const mediaStatus = mediaInfo ? statusForQuality(mediaInfo, is4k) : undefined;
+      if (mediaType !== 'tv' && mediaStatus != null && [2, 3, 4, 5].includes(mediaStatus)) {
         return {
           content: [
             {
@@ -1219,10 +1214,7 @@ class OverseerrServer {
       const requireConfirm = process.env.REQUIRE_MULTI_SEASON_CONFIRM !== 'false';
       
       if (requireConfirm) {
-        // Get details to calculate episode count
-        const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
-
-        const totalSeasons = details.numberOfSeasons || 0;
+        const totalSeasons = regularSeasonNumbers(details).length;
         const seasonsToRequest = expandedSeasons;
 
         // Calculate total episode count for requested seasons
@@ -1246,6 +1238,7 @@ class OverseerrServer {
                 type: 'text',
                 text: JSON.stringify({
                   requiresConfirmation: true,
+                  ...(skippedSeasons.length > 0 ? { skippedSeasons } : {}),
                   media: {
                     totalSeasons,
                     totalEpisodes: details.numberOfEpisodes,
@@ -1266,16 +1259,6 @@ class OverseerrServer {
       }
     }
 
-    // Guard: reject empty seasons before dry-run or real request — avoids silent success with no actual request
-    if (mediaType === 'tv' && (!expandedSeasons || expandedSeasons.length === 0)) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'No valid seasons specified. Use seasons: [1, 2, 3] for specific seasons or seasons: "all" for all seasons.'
-      );
-    }
-
-    // Get media title with caching
-    const details = await this.client.getMediaDetails(mediaType as 'movie' | 'tv', mediaId!);
     let mediaTitle: string;
     mediaTitle = details.title ?? details.name ?? 'Unknown Media';
 
@@ -1287,6 +1270,7 @@ class OverseerrServer {
             type: 'text',
             text: JSON.stringify({
               dryRun: true,
+              ...(skippedSeasons.length > 0 ? { skippedSeasons } : {}),
               wouldRequest: {
                 title: mediaTitle,
                 mediaType,
@@ -1308,13 +1292,13 @@ class OverseerrServer {
       is4k: is4k || false,
     };
 
-    // Use expandedSeasons (array) to ensure season 0 is not included
+    // Specials are included only when explicitly requested, never by "all".
     if (mediaType === 'tv' && expandedSeasons) {
       requestBody.seasons = expandedSeasons;
     }
 
-    if (args.serverId) requestBody.serverId = args.serverId;
-    if (args.profileId) requestBody.profileId = args.profileId;
+    if (args.serverId !== undefined) requestBody.serverId = args.serverId;
+    if (args.profileId !== undefined) requestBody.profileId = args.profileId;
     if (args.rootFolder) requestBody.rootFolder = args.rootFolder;
 
     const createdRequest = await this.client.createRequest(requestBody);
@@ -1326,16 +1310,18 @@ class OverseerrServer {
           text: JSON.stringify({
             success: true,
             requestId: createdRequest.id,
-            status: this.getStatusString(createdRequest.status),
+            status: statusFormat === 'code' ? createdRequest.status : this.getStatusString(createdRequest.status),
             message: `Successfully requested ${mediaTitle}`,
             seasonsRequested: createdRequest.seasons?.map((s: any) => s.seasonNumber),
+            ...(skippedSeasons.length > 0 ? { skippedSeasons } : {}),
           }, null, 2),
         },
       ],
     };
   }
 
-  private async handleBatchRequest(args: RequestMediaArgs) {
+  /** Shares validation and outcomes; auto-request keeps its numeric status format, and POSTs are never retried. */
+  private async executeRequestBatch(args: RequestMediaArgs, statusFormat: 'label' | 'code' = 'label') {
     const items = args.items!;
 
     const results = await batchWithRetry(
@@ -1346,34 +1332,48 @@ class OverseerrServer {
           mediaType: item.mediaType,
           mediaId: item.mediaId,
           seasons: item.seasons,
-          is4k: item.is4k,
+          is4k: item.is4k ?? args.is4k,
           items: undefined,
         };
         
-        const result = await this.handleSingleRequest(singleArgs);
+        const result = await this.handleSingleRequest(singleArgs, statusFormat);
         return JSON.parse(result.content[0].text);
-      }
+      },
+      // GETs retry inside the API client; retrying the whole operation could replay a POST.
+      { maxAttempts: 1 }
     );
 
     const successful = results.filter(r => r.success && r.result?.success);
-    const failed = results.filter(r => !r.success || !r.result?.success);
+    const previews = results.filter(r => r.success && r.result?.dryRun);
+    const confirmations = results.filter(r => r.success && r.result?.requiresConfirmation);
+    const completed = results.filter(r => r.success && (r.result?.success || r.result?.dryRun || r.result?.requiresConfirmation));
+    const failed = results.filter(r => !r.success || r.result?.success === false);
 
+    return {
+      summary: {
+        total: items.length,
+        successful: successful.length,
+        previewed: previews.length,
+        requiresConfirmation: confirmations.length,
+        failed: failed.length,
+      },
+      results: completed.map(r => ({ ...r.result, mediaType: r.item.mediaType, mediaId: r.item.mediaId })),
+      errors: failed.map(r => ({
+        ...r.result,
+        item: r.item,
+        error: r.error?.response?.data?.message || r.error?.message || r.result?.message || 'Unknown error',
+      })),
+    };
+  }
+
+  /** Formats all batch outcomes, including previews, confirmation prompts, and blocked seasons. */
+  private async handleBatchRequest(args: RequestMediaArgs) {
+    const response = await this.executeRequestBatch(args);
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify({
-            summary: {
-              total: items.length,
-              successful: successful.length,
-              failed: failed.length,
-            },
-            results: successful.map(r => r.result),
-            errors: failed.map(r => ({
-              item: r.item,
-              error: r.error?.message || r.result?.message || 'Unknown error',
-            })),
-          }, null, 2),
+          text: JSON.stringify(response, null, 2),
         },
       ],
     };
@@ -1669,19 +1669,40 @@ class OverseerrServer {
     };
   }
 
-  private async formatSearchResponse(result: SearchResult, format: string, limit?: number) {
-    const limitedResults = this.limitResults(result.results, limit);
+  /** Limits search hits before fetching optional per-result availability and detail fields. */
+  private async formatSearchResults(result: SearchResult, args: SearchMediaArgs, query: string) {
+    const limitedResults: SearchResultItem[] = this.limitResults(result.results, args.limit);
+    return Promise.all(limitedResults.map(async item => {
+      const fields = args.includeDetails?.fields || [];
+      const isMedia = item.mediaType === 'movie' || item.mediaType === 'tv';
+      const details = isMedia && (args.checkAvailability || fields.length > 0)
+        ? await this.client.getMediaDetails(item.mediaType as 'movie' | 'tv', item.id, { language: args.language })
+            .catch(() => {
+              console.error(`[WARN] Details lookup failed for ${item.mediaType} ${item.id}; returning the search hit without enrichment`);
+              return undefined;
+            })
+        : undefined;
+      const enrichedItem = details ? { ...item, mediaInfo: details.mediaInfo } : item;
+      const formatted = (args.format || 'compact') === 'compact'
+        ? this.formatCompactResult(enrichedItem)
+        : enrichedItem;
+      return details
+        ? this.enrichSearchResult(formatted, item, details, fields, extractSeasonNumber(query), args.includeDetails?.includeSeason !== false)
+        : formatted;
+    }));
+  }
 
-    if (format === 'compact') {
+  private async formatSearchResponse(result: SearchResult, args: SearchMediaArgs) {
+    const formattedResults = await this.formatSearchResults(result, args, args.query!);
+
+    if ((args.format || 'compact') === 'compact') {
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
               total: result.totalResults,
-              results: limitedResults.map(item => 
-                this.formatCompactResult(item)
-              ),
+              results: formattedResults,
             }, null, 2),
           },
         ],
@@ -1694,7 +1715,7 @@ class OverseerrServer {
           type: 'text',
           text: JSON.stringify({
             ...result,
-            results: limitedResults,
+            results: formattedResults,
           }, null, 2),
         },
       ],
@@ -1709,9 +1730,9 @@ class OverseerrServer {
       tmdbId: request.media.tmdbId,
       requestedBy: request.requestedBy.displayName || request.requestedBy.email,
       createdAt: request.createdAt,
-      seasons: request.media.seasons?.map(s => ({
+      seasons: request.seasons?.map(s => ({
         number: s.seasonNumber,
-        status: this.getMediaStatusString(s.status),
+        status: this.getStatusString(s.status),
       })),
     };
   }
@@ -1726,9 +1747,8 @@ class OverseerrServer {
     // Use explicitly passed mediaInfo, or fall back to mediaInfo embedded in the search result item
     const info = mediaInfo || item.mediaInfo;
     if (info) {
-      // Map all tracked media statuses (PENDING/PROCESSING/PARTIALLY_AVAILABLE/AVAILABLE)
-      // using the canonical getMediaStatusString mapping, not just status === 5
-      if (info.status && info.status >= 2 && info.status <= 5) {
+      // Use the shared media status labels, including Seerr's DELETED status.
+      if (info.status && info.status !== 1) {
         status = this.getMediaStatusString(info.status);
       }
       // Request status takes precedence when present (e.g. APPROVED, PENDING_APPROVAL)
@@ -1761,15 +1781,7 @@ class OverseerrServer {
   }
 
   private getMediaStatusString(status: number): string {
-    const statusMap: { [key: number]: string } = {
-      1: 'UNKNOWN',
-      2: 'PENDING',
-      3: 'PROCESSING',
-      4: 'PARTIALLY_AVAILABLE',
-      5: 'AVAILABLE',
-      6: 'DELETED',
-    };
-    return statusMap[status] || 'UNKNOWN';
+    return mediaStatusLabel(status);
   }
 
   async run() {
